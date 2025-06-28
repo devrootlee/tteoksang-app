@@ -1,0 +1,6 @@
+streamlit
+yfinance
+pandas
+beautifulsoup4
+requests
+vaderSentiment

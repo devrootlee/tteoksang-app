@@ -1,0 +1,7 @@
+# Ignore IDE settings
+.idea/
+*.iml
+
+# __pycache__, logs
+__pycache__/
+*.log
