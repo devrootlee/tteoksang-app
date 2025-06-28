@@ -3,16 +3,18 @@ import pandas as pd
 from stock_daily_data import get_prev_day_price
 
 st.set_page_config(page_title="📊 떡상", layout="wide")
-st.title("📊미국 주식 단타치기 30일 데이터")
+st.title("📊 미국 주식 단타치기")
 
-tickers = [
-    "HOOD",
-    "APP",
-    "VICI"
-]
+all_tickers = ["AAPL", "NVDA", "APP", "HOOD", "PLTR", "PEP"]
+
+selected_tickers = st.multiselect(
+    "📌 분석할 종목을 선택하세요",
+    options=all_tickers,
+    default=["AAPL", "NVDA"]
+)
 
 data = []
-for ticker in tickers:
+for ticker in selected_tickers:
     info = get_prev_day_price(ticker)
     if info:
         data.append(info)
