@@ -11,7 +11,7 @@ if "ticker_data" not in st.session_state:
 
 # ✅ Streamlit 설정
 st.set_page_config(page_title="📊 떡상", layout="wide")
-st.title("📊 미국 주식 단타치기")
+st.title("📊 떡상")
 
 # ✅ 종목 추가 입력
 new_ticker = st.text_input("🎯 분석할 종목을 입력하세요 (하나씩 추가)", "").upper()
