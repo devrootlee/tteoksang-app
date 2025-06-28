@@ -143,6 +143,13 @@ if data:
         (df["종가"] > df["전일저가"])
     ], use_container_width=True)
 
+    st.subheader("📈 더 상승 가능성 있는 종목 (느슨한 조건)")
+    st.dataframe(df[
+                     (df["RSI"] >= 45) &  # ✅ RSI가 45 이상이면 힘이 살아있다 가정
+                     (df["추세"] == "상승") &
+                     (df["감성점수"] > -0.1)  # ✅ 뉴스가 긍정이거나 최소 중립
+                     ], use_container_width=True)
+
     st.subheader("📉 더 하락할 여력 있는 종목")
     st.dataframe(df[
         (df["RSI"] >= 60) & (df["RSI"] <= 80) &
@@ -152,6 +159,13 @@ if data:
         (df["감성점수"] < 0.0) &
         (df["종가"] < df["전일저가"])
     ], use_container_width=True)
+
+    st.subheader("📉 더 하락 가능성 있는 종목 (느슨한 조건)")
+    st.dataframe(df[
+                     (df["RSI"] >= 60) &
+                     (df["추세"] == "하락") &
+                     (df["감성점수"] < 0.1)
+                     ], use_container_width=True)
 
 else:
     st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
