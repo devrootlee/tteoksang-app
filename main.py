@@ -1,24 +1,50 @@
 import streamlit as st
 import pandas as pd
+import time
 from stock_daily_data import get_prev_day_price
 
+# ✅ 세션 상태 초기화
+if "tickers" not in st.session_state:
+    st.session_state.tickers = []
+if "ticker_data" not in st.session_state:
+    st.session_state.ticker_data = {}
+
+# ✅ Streamlit 설정
 st.set_page_config(page_title="📊 떡상", layout="wide")
 st.title("📊 미국 주식 단타치기")
 
-all_tickers = ["AAPL", "NVDA", "APP", "HOOD", "PLTR", "PEP"]
+# ✅ 종목 추가 입력
+new_ticker = st.text_input("🎯 분석할 종목을 입력하세요 (하나씩 추가)", "").upper()
+if st.button("➕ 종목 추가") and new_ticker:
+    if new_ticker in st.session_state.tickers:
+        st.toast(f"⚠️ 이미 추가된 종목입니다: {new_ticker}", icon="⚠️")
+    else:
+        info = get_prev_day_price(new_ticker)
+        if info:
+            st.session_state.tickers.append(new_ticker)
+            st.session_state.ticker_data[new_ticker] = info
+        else:
+            box = st.empty()
+            box.warning(f"❌ 데이터를 불러올 수 없는 종목: {new_ticker}")
+            time.sleep(5)
+            box.empty()
 
-selected_tickers = st.multiselect(
-    "📌 분석할 종목을 선택하세요",
-    options=all_tickers,
-    default=["AAPL", "NVDA"]
-)
+# ✅ 삭제 UI
+valid_tickers = [t for t in st.session_state.tickers if t in st.session_state.ticker_data]
+with st.expander("📋 현재 선택된 종목 / 삭제", expanded=False):
+    if valid_tickers:
+        cols = st.columns(len(valid_tickers))
+        for i, ticker in enumerate(valid_tickers):
+            with cols[i]:
+                if st.button(f"❌ {ticker}", key=f"del_{ticker}"):
+                    st.session_state.tickers.remove(ticker)
+                    st.session_state.ticker_data.pop(ticker, None)
+                    st.rerun()
+    else:
+        st.markdown("➕ 종목을 추가해주세요!")
 
-data = []
-for ticker in selected_tickers:
-    info = get_prev_day_price(ticker)
-    if info:
-        data.append(info)
-
+# ✅ 분석 데이터
+data = [st.session_state.ticker_data[t] for t in valid_tickers]
 if data:
     df = pd.DataFrame(data)
     df = df[[
@@ -43,7 +69,6 @@ if data:
         "option_expiry"
     ]]
 
-    df = df.dropna(subset=["change_pct"])
     df["change_pct"] = pd.to_numeric(df["change_pct"], errors="coerce")
     df = df.dropna(subset=["change_pct"])
 
@@ -51,8 +76,8 @@ if data:
         "ticker": "종목코드",
         "date": "날짜",
         "change_pct": "등락률(%)",
-        "high": "최고가",
-        "low": "최저가",
+        "high": "전일고가",
+        "low": "전일저가",
         "close": "종가",
         "volume": "거래량",
         "volume_rate": "거래량배율",
@@ -71,63 +96,62 @@ if data:
 
     st.dataframe(df, use_container_width=True)
 
-    # 🎯 자동 추천: 롱/숏 전략 분리
+    # 🎯 포지션 필터링
     st.subheader("📈 롱 포지션 유망 종목")
-    long_candidates = df[
+    st.dataframe(df[
         (df["RSI"] < 35) &
         (df["등락률(%)"] < -1) &
         (df["콜 집중 행사가"] > df["종가"]) &
         (df["콜 거래량"] > df["풋 거래량"]) &
         (df["추세"] == "상승") &
         (df["거래량배율"] > 1.5) &
-        (df["감성점수"] > 0.2)  # ✅ 긍정 뉴스 포함
-        ]
-    st.dataframe(long_candidates, use_container_width=True)
+        (df["감성점수"] > 0.2) &
+        (df["종가"] > df["전일고가"])
+    ], use_container_width=True)
 
     st.subheader("🪃 하락 추세지만 반등 가능성 있는 종목")
-    rebound_candidates = df[
+    st.dataframe(df[
         (df["RSI"] < 35) &
         (df["등락률(%)"] < -1) &
         (df["콜 집중 행사가"] > df["종가"]) &
         (df["콜 거래량"] > df["풋 거래량"]) &
         (df["추세"] == "하락") &
         (df["거래량배율"] > 1.5) &
-        (df["감성점수"] > 0.0)  # ✅ 최소 중립 이상
-        ]
-    st.dataframe(rebound_candidates, use_container_width=True)
+        (df["감성점수"] > 0.0) &
+        (df["종가"] > df["전일저가"])
+    ], use_container_width=True)
 
     st.subheader("📉 숏 포지션 유망 종목")
-    short_candidates = df[
+    st.dataframe(df[
         (df["RSI"] > 70) &
         (df["등락률(%)"] > 1) &
         (df["풋 집중 행사가"] < df["종가"]) &
         (df["풋 거래량"] > df["콜 거래량"]) &
         (df["추세"] == "하락") &
         (df["거래량배율"] > 1.5) &
-        (df["감성점수"] < -0.2)  # ✅ 부정 뉴스 있으면 숏 강화
-        ]
-    st.dataframe(short_candidates, use_container_width=True)
+        (df["감성점수"] < -0.2) &
+        (df["종가"] < df["전일저가"])
+    ], use_container_width=True)
 
     st.subheader("📈 더 상승할 여력 있는 종목")
-    rising_candidates = df[
+    st.dataframe(df[
         (df["RSI"] >= 35) & (df["RSI"] <= 60) &
         (df["추세"] == "상승") &
         (df["거래량배율"] > 1.2) &
         (df["콜 집중 행사가"] >= df["종가"]) &
-        (df["감성점수"] > 0.0)  # ✅ 긍정 뉴스 조건 추가
-        ]
-    st.dataframe(rising_candidates, use_container_width=True)
+        (df["감성점수"] > 0.0) &
+        (df["종가"] > df["전일저가"])
+    ], use_container_width=True)
 
     st.subheader("📉 더 하락할 여력 있는 종목")
-    falling_candidates = df[
+    st.dataframe(df[
         (df["RSI"] >= 60) & (df["RSI"] <= 80) &
         (df["추세"] == "하락") &
         (df["거래량배율"] > 1.2) &
         (df["풋 집중 행사가"] <= df["종가"]) &
-        (df["감성점수"] < 0.0)  # ✅ 부정 뉴스 조건 추가
-        ]
-    st.dataframe(falling_candidates, use_container_width=True)
-
+        (df["감성점수"] < 0.0) &
+        (df["종가"] < df["전일저가"])
+    ], use_container_width=True)
 
 else:
-    st.warning("불러올 수 있는 데이터가 없습니다.")
+    st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
