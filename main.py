@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from stock_daily_data import get_prev_day_price
+from stock_daily_data import get_prev_day_price  # 수정된 분석 함수
 
 # ✅ 세션 상태 초기화
 if "tickers" not in st.session_state:
@@ -43,31 +43,21 @@ with st.expander("📋 현재 선택된 종목 / 삭제", expanded=False):
     else:
         st.markdown("➕ 종목을 추가해주세요!")
 
-# ✅ 분석 데이터
+# ✅ 분석 데이터 표시
 data = [st.session_state.ticker_data[t] for t in valid_tickers]
 if data:
     df = pd.DataFrame(data)
-    df = df[[
-        "ticker",
-        "date",
-        "change_pct",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "volume_rate",
-        "rsi",
-        "ma_5",
-        "ma_20",
-        "trend",
-        "deviation_pct",
-        "sentiment_score",
-        "max_call_strike",
-        "max_call_volume",
-        "max_put_strike",
-        "max_put_volume",
-        "option_expiry"
-    ]]
+
+    df = df[
+        [
+            "ticker", "date", "change_pct", "high", "low", "close", "volume", "volume_rate",
+            "rsi", "ma_5", "ma_20", "prev_ma_5", "prev_ma_20", "trend", "deviation_pct",
+            "bollinger_upper", "bollinger_lower", "avg_volume_5d",
+            "sentiment_score", "sentiment_score_prev", "sentiment_score_change",
+            "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume", "option_expiry",
+            "score"
+        ]
+    ]
 
     df["change_pct"] = pd.to_numeric(df["change_pct"], errors="coerce")
     df = df.dropna(subset=["change_pct"])
@@ -84,88 +74,101 @@ if data:
         "rsi": "RSI",
         "ma_5": "5일이평",
         "ma_20": "20일이평",
+        "prev_ma_5": "전일 5일이평",
+        "prev_ma_20": "전일 20일이평",
         "trend": "추세",
         "deviation_pct": "이격도(%)",
+        "bollinger_upper": "볼린저상단",
+        "bollinger_lower": "볼린저하단",
+        "avg_volume_5d": "5일평균거래량",
         "sentiment_score": "감성점수",
+        "sentiment_score_prev": "전일감성점수",
+        "sentiment_score_change": "감성점수변화율",
         "max_call_strike": "콜 집중 행사가",
         "max_call_volume": "콜 거래량",
         "max_put_strike": "풋 집중 행사가",
         "max_put_volume": "풋 거래량",
-        "option_expiry": "옵션 만기일"
+        "option_expiry": "옵션 만기일",
+        "score": "점수"
     })
 
+    # ✅ 점수 해석 컬럼 추가
+    def interpret_score(score):
+        if score >= 5:
+            return "🔥 강한 매수"
+        elif score >= 3:
+            return "⚖️ 중립~관망"
+        else:
+            return "⚠️ 주의/보류"
+
+    df["점수해석"] = df["점수"].apply(interpret_score)
+
+    # ✅ 원본 테이블 표시
+    st.subheader("📋 전체 분석 데이터")
     st.dataframe(df, use_container_width=True)
 
-    # 🎯 포지션 필터링
-    st.subheader("📈 롱 포지션 유망 종목")
-    st.dataframe(df[
-        (df["RSI"] < 35) &
-        (df["등락률(%)"] < -1) &
-        (df["콜 집중 행사가"] > df["종가"]) &
-        (df["콜 거래량"] > df["풋 거래량"]) &
-        (df["추세"] == "상승") &
-        (df["거래량배율"] > 1.5) &
-        (df["감성점수"] > 0.2) &
-        (df["종가"] > df["전일고가"])
-    ], use_container_width=True)
+    # ✅ 뉴스 확인용
+    with st.expander("📰 개별 종목 뉴스 확인", expanded=False):
+        for t in valid_tickers:
+            news = st.session_state.ticker_data[t].get("news", [])
+            if news:
+                st.markdown(f"### {t} 뉴스")
+                for item in news:
+                    emoji = item.get("sentiment_emoji", "⚪️")
+                    st.markdown(f"- {emoji} {item['title']}")
 
-    st.subheader("🪃 하락 추세지만 반등 가능성 있는 종목")
-    st.dataframe(df[
-        (df["RSI"] < 35) &
-        (df["등락률(%)"] < -1) &
-        (df["콜 집중 행사가"] > df["종가"]) &
-        (df["콜 거래량"] > df["풋 거래량"]) &
-        (df["추세"] == "하락") &
-        (df["거래량배율"] > 1.5) &
-        (df["감성점수"] > 0.0) &
-        (df["종가"] > df["전일저가"])
-    ], use_container_width=True)
+    # 🌟 반전 시도 필터
+    st.subheader("🌟 골든크로스 + 감성 급등 + 볼린저 하단 반등 시도")
+    st.dataframe(
+        df[
+            (df["전일 5일이평"] < df["전일 20일이평"]) &
+            (df["5일이평"] > df["20일이평"]) &
+            (df["감성점수변화율"] > 0.3) &
+            (df["종가"] < df["볼린저하단"]) &
+            (df["거래량"] > df["5일평균거래량"] * 1.8)
+        ],
+        use_container_width=True,
+    )
 
-    st.subheader("📉 숏 포지션 유망 종목")
-    st.dataframe(df[
-        (df["RSI"] > 70) &
-        (df["등락률(%)"] > 1) &
-        (df["풋 집중 행사가"] < df["종가"]) &
-        (df["풋 거래량"] > df["콜 거래량"]) &
-        (df["추세"] == "하락") &
-        (df["거래량배율"] > 1.5) &
-        (df["감성점수"] < -0.2) &
-        (df["종가"] < df["전일저가"])
-    ], use_container_width=True)
+    # 📈 상승 기대 종목
+    st.subheader("📈 상승 기대 종목")
+    st.dataframe(
+        df[
+            (
+                ((df["RSI"] < 40) | ((df["RSI"] >= 35) & (df["RSI"] <= 60))) &
+                (df["추세"] == "상승") &
+                (df["감성점수"] > 0.0) &
+                (df["거래량배율"] > 1.2)
+            ) & (
+                (df["콜 집중 행사가"].notna() & (df["콜 집중 행사가"] >= df["종가"])) |
+                (df["콜 집중 행사가"].isna())
+            ) & (
+                (df["콜 거래량"].notna() & df["풋 거래량"].notna() & (df["콜 거래량"] > df["풋 거래량"])) |
+                (df["콜 거래량"].isna())
+            )
+        ],
+        use_container_width=True,
+    )
 
-    st.subheader("📈 더 상승할 여력 있는 종목")
-    st.dataframe(df[
-        (df["RSI"] >= 35) & (df["RSI"] <= 60) &
-        (df["추세"] == "상승") &
-        (df["거래량배율"] > 1.2) &
-        (df["콜 집중 행사가"] >= df["종가"]) &
-        (df["감성점수"] > 0.0) &
-        (df["종가"] > df["전일저가"])
-    ], use_container_width=True)
-
-    st.subheader("📈 더 상승 가능성 있는 종목 (느슨한 조건)")
-    st.dataframe(df[
-                     (df["RSI"] >= 45) &  # ✅ RSI가 45 이상이면 힘이 살아있다 가정
-                     (df["추세"] == "상승") &
-                     (df["감성점수"] > -0.1)  # ✅ 뉴스가 긍정이거나 최소 중립
-                     ], use_container_width=True)
-
-    st.subheader("📉 더 하락할 여력 있는 종목")
-    st.dataframe(df[
-        (df["RSI"] >= 60) & (df["RSI"] <= 80) &
-        (df["추세"] == "하락") &
-        (df["거래량배율"] > 1.2) &
-        (df["풋 집중 행사가"] <= df["종가"]) &
-        (df["감성점수"] < 0.0) &
-        (df["종가"] < df["전일저가"])
-    ], use_container_width=True)
-
-    st.subheader("📉 더 하락 가능성 있는 종목 (느슨한 조건)")
-    st.dataframe(df[
-                     (df["RSI"] >= 60) &
-                     (df["추세"] == "하락") &
-                     (df["감성점수"] < 0.1)
-                     ], use_container_width=True)
+    # 📉 하락 기대 종목
+    st.subheader("📉 하락 기대 종목")
+    st.dataframe(
+        df[
+            (
+                (df["RSI"] >= 60) &
+                (df["추세"] == "하락") &
+                (df["감성점수"] < 0.0) &
+                (df["거래량배율"] > 1.2)
+            ) & (
+                (df["풋 집중 행사가"].notna() & (df["풋 집중 행사가"] <= df["종가"])) |
+                (df["풋 집중 행사가"].isna())
+            ) & (
+                (df["풋 거래량"].notna() & df["콜 거래량"].notna() & (df["풋 거래량"] > df["콜 거래량"])) |
+                (df["풋 거래량"].isna())
+            )
+        ],
+        use_container_width=True,
+    )
 
 else:
     st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
