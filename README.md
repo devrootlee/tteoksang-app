@@ -1,4 +1,4 @@
-# 📈 내떡상앱 (Tteoksang App)
+# 📈 떡상앱 (Tteoksang App)
 
 > "감성 + 기술적 + 수급 지표를 결합한 주가 분석 앱"
 
