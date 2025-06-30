@@ -128,23 +128,13 @@ def get_prev_day_price(ticker):
         avg_volume = float(recent_volumes.mean()) if not recent_volumes.empty else None
         volume_rate = round(volume / avg_volume, 2) if avg_volume and avg_volume > 0 else None
 
-        # ✅ 뉴스 1번 조회 + 감성 변화 계산
+        # ✅ 뉴스 감성 점수 계산
         try:
             news_items = fetch_finviz_news(ticker, max_items=5)
-            titles = [n["title"] for n in news_items]
-
-            prev_titles = [{"title": t} for t in titles[:2]]
-            today_titles = [{"title": t} for t in titles[2:]]
-
-            sentiment_score_prev = analyze_sentiment(prev_titles)
-            sentiment_score = analyze_sentiment(today_titles)
-            sentiment_score_change = round(sentiment_score - sentiment_score_prev, 3)
-
+            sentiment_score = analyze_sentiment(news_items)
         except:
             news_items = []
             sentiment_score = 0.0
-            sentiment_score_prev = 0.0
-            sentiment_score_change = 0.0
 
         # 옵션
         option_summary = get_option_distribution(ticker)
@@ -185,8 +175,6 @@ def get_prev_day_price(ticker):
             "bollinger_lower": round(latest["bollinger_lower"].item(), 2),
             "avg_volume_5d": round(avg_volume, 2) if avg_volume else None,
             "sentiment_score": sentiment_score,
-            "sentiment_score_prev": sentiment_score_prev,
-            "sentiment_score_change": sentiment_score_change,
             "score": score,
             "news": news_items,
             **option_summary

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from stock_daily_data import get_prev_day_price  # 수정된 분석 함수
+from stock_daily_data import get_prev_day_price  # 수정된 분석 함수 (감성 변화율 제거됨)
 
 # ✅ 세션 상태 초기화
 if "tickers" not in st.session_state:
@@ -52,10 +52,9 @@ if data:
         [
             "ticker", "date", "change_pct", "high", "low", "close", "volume", "volume_rate",
             "rsi", "ma_5", "ma_20", "prev_ma_5", "prev_ma_20", "trend", "deviation_pct",
-            "bollinger_upper", "bollinger_lower", "avg_volume_5d",
-            "sentiment_score", "sentiment_score_prev", "sentiment_score_change",
-            "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume", "option_expiry",
-            "score"
+            "bollinger_upper", "bollinger_lower", "avg_volume_5d", "sentiment_score",
+            "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume",
+            "option_expiry", "score"
         ]
     ]
 
@@ -82,14 +81,12 @@ if data:
         "bollinger_lower": "볼린저하단",
         "avg_volume_5d": "5일평균거래량",
         "sentiment_score": "감성점수",
-        "sentiment_score_prev": "전일감성점수",
-        "sentiment_score_change": "감성점수변화율",
         "max_call_strike": "콜 집중 행사가",
         "max_call_volume": "콜 거래량",
         "max_put_strike": "풋 집중 행사가",
         "max_put_volume": "풋 거래량",
         "option_expiry": "옵션 만기일",
-        "score": "점수"
+        "score": "종합 점수"
     })
 
     # ✅ 점수 해석 컬럼 추가
@@ -101,7 +98,7 @@ if data:
         else:
             return "⚠️ 주의/보류"
 
-    df["점수해석"] = df["점수"].apply(interpret_score)
+    df["점수 해석"] = df["종합 점수"].apply(interpret_score)
 
     # ✅ 원본 테이블 표시
     st.subheader("📋 전체 분석 데이터")
@@ -118,14 +115,14 @@ if data:
                     st.markdown(f"- {emoji} {item['title']}")
 
     # 🌟 반전 시도 필터
-    st.subheader("🌟 골든크로스 + 감성 급등 + 볼린저 하단 반등 시도")
+    st.subheader("🌟 골든크로스 + 볼린저 하단 반등 시도")
     st.dataframe(
         df[
             (df["전일 5일이평"] < df["전일 20일이평"]) &
             (df["5일이평"] > df["20일이평"]) &
-            (df["감성점수변화율"] > 0.3) &
             (df["종가"] < df["볼린저하단"]) &
-            (df["거래량"] > df["5일평균거래량"] * 1.8)
+            (df["거래량"] > df["5일평균거래량"] * 1.8) &
+            (df["감성점수"] > 0.0)
         ],
         use_container_width=True,
     )
@@ -150,6 +147,19 @@ if data:
         use_container_width=True,
     )
 
+    # 📥 눌림목 매수 후보 종목
+    st.subheader("📥 눌림목 매수 후보 종목")
+    st.dataframe(
+        df[
+            (df["RSI"] >= 40) & (df["RSI"] <= 50) &
+            (df["5일이평"] > df["20일이평"]) &
+            (df["종가"] < df["볼린저상단"]) &
+            (df["감성점수"] >= -0.1) &
+            (df["거래량배율"] > 1.15)
+        ],
+        use_container_width=True
+    )
+
     # 📉 하락 기대 종목
     st.subheader("📉 하락 기대 종목")
     st.dataframe(
@@ -169,6 +179,31 @@ if data:
         ],
         use_container_width=True,
     )
+
+    # 📈📉 상승 / 하락 양방향 경계 종목
+    st.subheader("⚖️ 상승 / 하락 양방향 경계 종목")
+    col_up, col_down = st.columns(2)
+    with col_up:
+        st.markdown("### 📈 상승 기대 종목")
+        st.dataframe(
+            df[
+                (df["RSI"] < 40) &
+                (df["거래량배율"] > 1.2) &
+                (df["감성점수"] > 0.0) &
+                (df["5일이평"] > df["20일이평"])
+            ],
+            use_container_width=True
+        )
+    with col_down:
+        st.markdown("### 📉 하락 경계 종목")
+        st.dataframe(
+            df[
+                (df["RSI"] >= 45) & (df["RSI"] <= 60) &
+                (df["감성점수"] < 0.0) &
+                (df["5일이평"] < df["20일이평"])
+            ],
+            use_container_width=True
+        )
 
 else:
     st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
