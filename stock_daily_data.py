@@ -90,13 +90,14 @@ def get_option_distribution(ticker):
 # 📈 메인 분석 함수
 def get_prev_day_price(ticker):
     try:
-        data = yf.download(ticker, period="60d", interval="1d", auto_adjust=False).dropna()
-        data = data.sort_index().tail(30)
+        data = yf.download(ticker, period="90d", interval="1d", auto_adjust=False).dropna()
+        data = data.sort_index()
 
-        if len(data) < 20:
+        if len(data) < 30:
             print(f"❌ {ticker}: 거래일 부족 ({len(data)})")
             return None
 
+        # 지표 계산
         data["RSI"] = compute_rsi(data["Close"])
         ma_5, ma_20 = compute_moving_averages(data["Close"])
         data["bollinger_middle"] = data["Close"].rolling(window=20).mean()
@@ -104,12 +105,16 @@ def get_prev_day_price(ticker):
         data["bollinger_upper"] = data["bollinger_middle"] + (data["bollinger_std"] * 2)
         data["bollinger_lower"] = data["bollinger_middle"] - (data["bollinger_std"] * 2)
 
-        prev = data.iloc[-2]
-        latest = data.iloc[-1]
+        recent = data.tail(30)
+        prev = recent.iloc[-2]
+        latest = recent.iloc[-1]
 
         prev_close = prev["Close"].item()
         latest_close = latest["Close"].item()
+        open_price = latest["Open"].item()
+
         change_pct = round((latest_close - prev_close) / prev_close * 100, 2)
+        gap_pct = round((open_price - prev_close) / prev_close * 100, 2)
 
         volume = int(latest["Volume"].item())
         rsi = round(latest["RSI"].item(), 2)
@@ -123,12 +128,11 @@ def get_prev_day_price(ticker):
         prev_ma5 = round(ma_5.iloc[-2].item(), 2)
         prev_ma20 = round(ma_20.iloc[-2].item(), 2)
 
-        # 평균 거래량
-        recent_volumes = data["Volume"].iloc[-6:-1].dropna()
+        recent_volumes = recent["Volume"].iloc[-6:-1].dropna()
         avg_volume = float(recent_volumes.mean()) if not recent_volumes.empty else None
         volume_rate = round(volume / avg_volume, 2) if avg_volume and avg_volume > 0 else None
 
-        # ✅ 뉴스 감성 점수 계산
+        # 뉴스 수집 (감성 분석 제거 가능)
         try:
             news_items = fetch_finviz_news(ticker, max_items=5)
             sentiment_score = analyze_sentiment(news_items)
@@ -136,15 +140,14 @@ def get_prev_day_price(ticker):
             news_items = []
             sentiment_score = 0.0
 
-        # 옵션
         option_summary = get_option_distribution(ticker)
 
-        # ✅ 점수 계산
+        # ✅ 점수 계산 (감성 제외, gap 추가)
         score = 0
         if isinstance(rsi, (int, float)) and (rsi < 40 or (35 <= rsi <= 60)): score += 1
         if trend == "상승": score += 1
         if isinstance(volume_rate, (int, float)) and volume_rate > 1.2: score += 1
-        if sentiment_score > 0: score += 1
+        if gap_pct > 1.0: score += 1  # 갭 상승이 강하면 추가 점수
         if option_summary["max_call_strike"] is not None and option_summary["max_call_strike"] >= close:
             score += 1
         if (
@@ -154,11 +157,11 @@ def get_prev_day_price(ticker):
         ):
             score += 1
 
-        # ✅ 결과
         return {
             "date": latest.name.strftime('%Y-%m-%d'),
             "ticker": ticker,
             "change_pct": change_pct,
+            "gap_pct": gap_pct,
             "high": round(high, 2),
             "low": round(low, 2),
             "close": round(close, 2),
@@ -183,3 +186,6 @@ def get_prev_day_price(ticker):
     except Exception as e:
         print(f"❌ {ticker} 처리 실패: {e}")
         return None
+
+
+

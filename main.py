@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from stock_daily_data import get_prev_day_price  # 수정된 분석 함수 (감성 변화율 제거됨)
+from stock_daily_data import get_prev_day_price
 
 # ✅ 세션 상태 초기화
 if "tickers" not in st.session_state:
@@ -50,9 +50,9 @@ if data:
 
     df = df[
         [
-            "ticker", "date", "change_pct", "high", "low", "close", "volume", "volume_rate",
+            "ticker", "date", "change_pct", "gap_pct", "high", "low", "close", "volume", "volume_rate",
             "rsi", "ma_5", "ma_20", "prev_ma_5", "prev_ma_20", "trend", "deviation_pct",
-            "bollinger_upper", "bollinger_lower", "avg_volume_5d", "sentiment_score",
+            "bollinger_upper", "bollinger_lower", "avg_volume_5d",
             "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume",
             "option_expiry", "score"
         ]
@@ -65,6 +65,7 @@ if data:
         "ticker": "종목코드",
         "date": "날짜",
         "change_pct": "등락률(%)",
+        "gap_pct": "갭상승률(%)",
         "high": "전일고가",
         "low": "전일저가",
         "close": "종가",
@@ -80,7 +81,6 @@ if data:
         "bollinger_upper": "볼린저상단",
         "bollinger_lower": "볼린저하단",
         "avg_volume_5d": "5일평균거래량",
-        "sentiment_score": "감성점수",
         "max_call_strike": "콜 집중 행사가",
         "max_call_volume": "콜 거래량",
         "max_put_strike": "풋 집중 행사가",
@@ -89,7 +89,6 @@ if data:
         "score": "종합 점수"
     })
 
-    # ✅ 점수 해석 컬럼 추가
     def interpret_score(score):
         if score >= 5:
             return "🔥 강한 매수"
@@ -100,11 +99,9 @@ if data:
 
     df["점수 해석"] = df["종합 점수"].apply(interpret_score)
 
-    # ✅ 원본 테이블 표시
     st.subheader("📋 전체 분석 데이터")
     st.dataframe(df, use_container_width=True)
 
-    # ✅ 뉴스 확인용
     with st.expander("📰 개별 종목 뉴스 확인", expanded=False):
         for t in valid_tickers:
             news = st.session_state.ticker_data[t].get("news", [])
@@ -114,49 +111,51 @@ if data:
                     emoji = item.get("sentiment_emoji", "⚪️")
                     st.markdown(f"- {emoji} {item['title']}")
 
-    # 🌟 반전 시도 필터
-    st.subheader("🌟 골든크로스 + 볼린저 하단 반등 시도")
+    # 📈 상승 기대 종목 (갭 조건 제거)
+    st.subheader("📈 상승 기대 종목")
+    st.dataframe(
+        df[
+            (df["RSI"] <= 65) &  # 과열 방지
+            (df["거래량배율"] >= 1.2) &  # 평균 대비 20% 이상 증가한 거래량
+            (df["추세"] == "상승") &
+            (df["5일이평"] > df["20일이평"]) &
+            (
+                    (df["콜 집중 행사가"].notna() & (df["콜 집중 행사가"] >= df["종가"] * 0.98)) |
+                    (df["콜 집중 행사가"].isna())
+            ) &
+            (
+                    (df["콜 거래량"].notna() & df["풋 거래량"].notna() & (df["콜 거래량"] >= df["풋 거래량"] * 1.2)) |
+                    (df["콜 거래량"].isna())
+            )
+            ],
+        use_container_width=True
+    )
+
+    # 📥 눌림목 매수 후보 종목 (갭 조건 완화)
+    st.subheader("📥 눌림목 매수 후보 종목")
+    st.dataframe(
+        df[
+            (df["RSI"] >= 40) &
+            (df["RSI"] <= 58) &
+            (df["갭상승률(%)"] > 0.3) &
+            (df["거래량배율"] >= 1.1) &
+            (df["5일이평"] > df["20일이평"]) &
+            (df["종가"] < df["볼린저상단"] * 0.99)  # 과열 방지
+            ],
+        use_container_width=True
+    )
+
+    # 🌟 반전 시도 필터 (갭 조건 완화)
+    st.subheader("🌟 골든크로스 반등 시도")
     st.dataframe(
         df[
             (df["전일 5일이평"] < df["전일 20일이평"]) &
             (df["5일이평"] > df["20일이평"]) &
-            (df["종가"] < df["볼린저하단"]) &
-            (df["거래량"] > df["5일평균거래량"] * 1.8) &
-            (df["감성점수"] > 0.0)
-        ],
-        use_container_width=True,
-    )
-
-    # 📈 상승 기대 종목
-    st.subheader("📈 상승 기대 종목")
-    st.dataframe(
-        df[
-            (
-                ((df["RSI"] < 40) | ((df["RSI"] >= 35) & (df["RSI"] <= 60))) &
-                (df["추세"] == "상승") &
-                (df["감성점수"] > 0.0) &
-                (df["거래량배율"] > 1.2)
-            ) & (
-                (df["콜 집중 행사가"].notna() & (df["콜 집중 행사가"] >= df["종가"])) |
-                (df["콜 집중 행사가"].isna())
-            ) & (
-                (df["콜 거래량"].notna() & df["풋 거래량"].notna() & (df["콜 거래량"] > df["풋 거래량"])) |
-                (df["콜 거래량"].isna())
-            )
-        ],
-        use_container_width=True,
-    )
-
-    # 📥 눌림목 매수 후보 종목
-    st.subheader("📥 눌림목 매수 후보 종목")
-    st.dataframe(
-        df[
-            (df["RSI"] >= 40) & (df["RSI"] <= 50) &
-            (df["5일이평"] > df["20일이평"]) &
-            (df["종가"] < df["볼린저상단"]) &
-            (df["감성점수"] >= -0.1) &
-            (df["거래량배율"] > 1.15)
-        ],
+            (df["갭상승률(%)"] > 0.2) &
+            (df["거래량"] >= df["5일평균거래량"] * 1.3) &
+            (df["종가"] < df["볼린저하단"] * 1.01) &
+            (df["RSI"] < 70)  # 과열 방지
+            ],
         use_container_width=True
     )
 
@@ -164,46 +163,70 @@ if data:
     st.subheader("📉 하락 기대 종목")
     st.dataframe(
         df[
+            (df["RSI"] >= 68) &
+            (df["갭상승률(%)"] < -1.0) &
+            (df["거래량배율"] >= 1.2) &
+            (df["추세"] == "하락") &
             (
-                (df["RSI"] >= 60) &
-                (df["추세"] == "하락") &
-                (df["감성점수"] < 0.0) &
-                (df["거래량배율"] > 1.2)
-            ) & (
-                (df["풋 집중 행사가"].notna() & (df["풋 집중 행사가"] <= df["종가"])) |
-                (df["풋 집중 행사가"].isna())
-            ) & (
-                (df["풋 거래량"].notna() & df["콜 거래량"].notna() & (df["풋 거래량"] > df["콜 거래량"])) |
-                (df["풋 거래량"].isna())
+                    (df["풋 집중 행사가"].notna() & (df["풋 집중 행사가"] <= df["종가"] * 1.02)) |
+                    (df["풋 집중 행사가"].isna())
+            ) &
+            (
+                    (df["풋 거래량"].notna() & df["콜 거래량"].notna() & (df["풋 거래량"] >= df["콜 거래량"] * 1.2)) |
+                    (df["풋 거래량"].isna())
             )
-        ],
-        use_container_width=True,
+            ],
+        use_container_width=True
     )
 
-    # 📈📉 상승 / 하락 양방향 경계 종목
+    # 🚀 갭 상승 + 거래량 급등 종목
+    st.subheader("🚀 갭 상승 + 거래량 급등 종목")
+    st.dataframe(
+        df[
+            (df["갭상승률(%)"] > 2.0) &
+            (df["거래량배율"] > 1.8) &
+            (df["RSI"] < 75) &
+            (df["추세"] == "상승")
+        ],
+        use_container_width=True
+    )
+
+    # ⚖️ 상승 / 하락 경계 종목 (갭 조건 제거)
     st.subheader("⚖️ 상승 / 하락 양방향 경계 종목")
     col_up, col_down = st.columns(2)
     with col_up:
-        st.markdown("### 📈 상승 기대 종목")
+        st.markdown("### 📈 상승 경계 종목")
         st.dataframe(
             df[
-                (df["RSI"] < 40) &
-                (df["거래량배율"] > 1.2) &
-                (df["감성점수"] > 0.0) &
-                (df["5일이평"] > df["20일이평"])
-            ],
+                (df["RSI"] < 48) &
+                (df["5일이평"] > df["20일이평"]) &
+                (df["거래량배율"] > 0.9)
+                ],
             use_container_width=True
         )
     with col_down:
         st.markdown("### 📉 하락 경계 종목")
         st.dataframe(
             df[
-                (df["RSI"] >= 45) & (df["RSI"] <= 60) &
-                (df["감성점수"] < 0.0) &
-                (df["5일이평"] < df["20일이평"])
-            ],
+                (df["RSI"] >= 52) &
+                (df["RSI"] <= 70) &
+                (df["5일이평"] < df["20일이평"]) &
+                (df["거래량배율"] > 1.0)
+                ],
             use_container_width=True
         )
+
+    # 🔥 과열 경고 종목
+    st.subheader("🔥 과열 경고 종목")
+    st.dataframe(
+        df[
+            (df["RSI"] >= 78) &
+            (df["갭상승률(%)"] > 2.0) &
+            (df["거래량배율"] >= 2.2) &
+            (df["이격도(%)"] >= 10)
+            ],
+        use_container_width=True
+    )
 
 else:
     st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
