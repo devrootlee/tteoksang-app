@@ -50,11 +50,31 @@ if data:
 
     df = df[
         [
-            "ticker", "date", "change_pct", "gap_pct", "high", "low", "close", "volume", "volume_rate",
-            "rsi", "ma_5", "ma_20", "prev_ma_5", "prev_ma_20", "trend", "deviation_pct",
-            "bollinger_upper", "bollinger_lower", "avg_volume_5d",
-            "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume",
-            "option_expiry", "score"
+            "ticker",
+            "date",
+            "change_pct",
+            "gap_pct",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "volume_rate",
+            "rsi",
+            "ma_5",
+            "ma_20",
+            "prev_ma_5",
+            "prev_ma_20",
+            "trend",
+            "deviation_pct",
+            "bollinger_upper",
+            "bollinger_lower",
+            "avg_volume_5d",
+            "max_call_strike",
+            "max_call_volume",
+            "max_put_strike",
+            "max_put_volume",
+            "option_expiry",
+            "score"
         ]
     ]
 
@@ -212,6 +232,57 @@ if data:
                 (df["RSI"] <= 70) &
                 (df["5일이평"] < df["20일이평"]) &
                 (df["거래량배율"] > 1.0)
+                ],
+            use_container_width=True
+        )
+
+    # ⚖️ 옵션 중심 기대/경계 종목
+    st.subheader("⚖️ 옵션 기반 상승/하락 기대 종목")
+    col_up, col_down = st.columns(2)
+
+    with col_up:
+        st.markdown("### 📈 콜 중심 (상승 기대)")
+        st.dataframe(
+            df[
+                (df["콜 거래량"] > df["풋 거래량"]) &
+                (df["콜 집중 행사가"].notna()) &
+                (df["콜 집중 행사가"] > df["종가"]) &
+                ((df["콜 집중 행사가"] - df["종가"]) / df["종가"] < 0.05)
+                ],
+            use_container_width=True
+        )
+    with col_down:
+        st.markdown("### 📉 풋 중심 (하락 경계)")
+        st.dataframe(
+            df[
+                (df["풋 거래량"] > df["콜 거래량"]) &
+                (df["풋 집중 행사가"].notna()) &
+                (df["풋 집중 행사가"] < df["종가"]) &
+                ((df["종가"] - df["풋 집중 행사가"]) / df["종가"] < 0.05)
+                ],
+            use_container_width=True
+        )
+    # 🔔 옵션 행사가 돌파 종목 (콜 상회 or 풋 하회)
+    st.subheader("🔔 옵션 행사가 돌파된 종목")
+    col_up, col_down = st.columns(2)
+
+    with col_up:
+        st.markdown("### 📈 콜 행사가 돌파")
+        st.dataframe(
+            df[
+                (df["콜 거래량"] > df["풋 거래량"]) &
+                (df["콜 집중 행사가"].notna()) &
+                (df["종가"] > df["콜 집중 행사가"])
+                ],
+            use_container_width=True
+        )
+    with col_down:
+        st.markdown("### 📉 풋 행사가 하회")
+        st.dataframe(
+            df[
+                (df["풋 거래량"] > df["콜 거래량"]) &
+                (df["풋 집중 행사가"].notna()) &
+                (df["종가"] < df["풋 집중 행사가"])
                 ],
             use_container_width=True
         )

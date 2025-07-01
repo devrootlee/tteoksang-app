@@ -88,6 +88,7 @@ def get_option_distribution(ticker):
         }
 
 # 📈 메인 분석 함수
+# 📈 메인 분석 함수
 def get_prev_day_price(ticker):
     try:
         data = yf.download(ticker, period="90d", interval="1d", auto_adjust=False).dropna()
@@ -132,7 +133,7 @@ def get_prev_day_price(ticker):
         avg_volume = float(recent_volumes.mean()) if not recent_volumes.empty else None
         volume_rate = round(volume / avg_volume, 2) if avg_volume and avg_volume > 0 else None
 
-        # 뉴스 수집 (감성 분석 제거 가능)
+        # 뉴스 수집
         try:
             news_items = fetch_finviz_news(ticker, max_items=5)
             sentiment_score = analyze_sentiment(news_items)
@@ -142,12 +143,12 @@ def get_prev_day_price(ticker):
 
         option_summary = get_option_distribution(ticker)
 
-        # ✅ 점수 계산 (감성 제외, gap 추가)
+        # ✅ 점수 계산
         score = 0
         if isinstance(rsi, (int, float)) and (rsi < 40 or (35 <= rsi <= 60)): score += 1
         if trend == "상승": score += 1
         if isinstance(volume_rate, (int, float)) and volume_rate > 1.2: score += 1
-        if gap_pct > 1.0: score += 1  # 갭 상승이 강하면 추가 점수
+        if gap_pct > 1.0: score += 1
         if option_summary["max_call_strike"] is not None and option_summary["max_call_strike"] >= close:
             score += 1
         if (
@@ -186,6 +187,7 @@ def get_prev_day_price(ticker):
     except Exception as e:
         print(f"❌ {ticker} 처리 실패: {e}")
         return None
+
 
 
 
