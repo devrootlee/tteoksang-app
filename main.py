@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-import altair as alt
+import plotly.graph_objects as go
 from stock_daily_data import get_prev_day_price
 
 # ✅ 세션 상태 초기화
@@ -138,75 +138,113 @@ if data:
                     emoji = item.get("sentiment_emoji", "⚪️")
                     st.markdown(f"- {emoji} {item['title']}")
 
-    # 📊 종목별 180일 차트 시각화
-    with st.expander("📊 종목별 180일 차트", expanded=False):
+    # 📊 핵심 가격대 요약 차트 (정렬된 수평선)
+    def evaluate_breakout(meta):
+        signals = 0
+        reasons = []
+
+        if meta["close"] > meta["buy_target"]:
+            signals += 1
+            reasons.append("채널 상단 돌파")
+
+        if meta.get("volume_rate") and meta["volume_rate"] >= 1.2:
+            signals += 1
+            reasons.append("거래량↑")
+
+        if 50 <= meta["rsi"] <= 72:
+            signals += 1
+            reasons.append("RSI 양호")
+
+        if meta["ma_5"] > meta["ma_20"]:
+            signals += 1
+            reasons.append("골든크로스 유지")
+
+        if meta["gap_pct"] > 0.3:
+            signals += 1
+            reasons.append("갭 상승")
+
+        if 0 <= meta["deviation_pct"] <= 8:
+            signals += 1
+            reasons.append("이격도 정상")
+
+        if signals >= 4:
+            status = "🔥 돌파 가능성 높음"
+        elif signals >= 2:
+            status = "⚖️ 관망 (부분 조건 만족)"
+        else:
+            status = "❌ 돌파 신호 아님"
+
+        return status, reasons
+
+
+    with st.expander("📊 핵심 가격대 요약 (Plotly)", expanded=False):
         for t in valid_tickers:
             meta = st.session_state.ticker_data[t]
-            chart_data = meta.get("chart_history")
-            if chart_data:
-                df_chart = pd.DataFrame(chart_data)
+            breakout_status = evaluate_breakout(meta)
 
-                if "Date" not in df_chart.columns:
-                    st.warning(f"{t}의 차트에 'Date' 컬럼이 없습니다.")
-                    continue
+            price_lines = [
+                {"label": "손절가", "price": meta["stop_loss"], "color": "red"},
+                {"label": "매수 적정가", "price": meta["buy_target"], "color": "green"},
+                {"label": "전일 종가", "price": meta["close"], "color": "white"},
+                {"label": "기대 매도가", "price": meta["sell_target"], "color": "orange"},
+            ]
 
-                df_chart["Date"] = pd.to_datetime(df_chart["Date"])
-                max_date = df_chart["Date"].max()
-                min_date = df_chart["Date"].min()
+            fig = go.Figure()
 
-                # ✅ 채널 영역용 DataFrame
-                channel_df = pd.DataFrame({
-                    "Date": [min_date, max_date],
-                    "buy": [meta["buy_target"]] * 2,
-                    "sell": [meta["sell_target"]] * 2,
-                    "stop": [meta["stop_loss"]] * 2
-                })
-
-                # ✅ 차트 기반
-                chart_base = alt.Chart(df_chart).encode(x="Date:T")
-
-                # ✅ 채널 영역 (buy~sell)
-                band = alt.Chart(channel_df).mark_area(opacity=0.15, color='green').encode(
-                    x="Date:T",
-                    y="buy:Q",
-                    y2="sell:Q"
+            for p in price_lines:
+                fig.add_shape(
+                    type="line",
+                    x0=0, x1=1, xref="paper",
+                    y0=p["price"], y1=p["price"],
+                    line=dict(color=p["color"], width=2),
+                )
+                fig.add_annotation(
+                    x=0.5, xref="paper",
+                    y=p["price"], yref="y",
+                    text=f"{p['label']}: {p['price']:.2f}",
+                    showarrow=False,
+                    font=dict(color=p["color"], size=13),
+                    xanchor="center", yanchor="bottom",
+                    bgcolor="rgba(0,0,0,0.6)",
+                    borderpad=4
                 )
 
-                # ✅ Stop loss 선
-                stop_line = alt.Chart(channel_df).mark_rule(color="red", strokeDash=[4, 2]).encode(y="stop:Q")
+            # ✅ 상단 상태 표시 텍스트
+            status, reasons = evaluate_breakout(meta)
+            reasons_str = " / ".join(reasons)
+            combined_text = f"🚦 {status}  ｜  📋 {reasons_str}"
 
-                # ✅ 가격선
-                close_line = chart_base.mark_line(color="white").encode(y="Close:Q")
-                upper_line = chart_base.mark_line(strokeDash=[4, 2], color="red").encode(y="bollinger_upper:Q")
-                middle_line = chart_base.mark_line(strokeDash=[2, 2], color="gray").encode(y="bollinger_middle:Q")
-                lower_line = chart_base.mark_line(strokeDash=[4, 2], color="blue").encode(y="bollinger_lower:Q")
+            # 상단 좌측 고정 표시
+            fig.add_annotation(
+                x=0, xref="paper",
+                y=max(p["price"] for p in price_lines) + 10, yref="y",
+                text=combined_text,
+                showarrow=False,
+                font=dict(size=13, color="yellow"),
+                xanchor="left", yanchor="top",
+                bgcolor="rgba(0,0,0,0.7)",
+                borderpad=6
+            )
 
+            fig.update_layout(
+                height=320,
+                margin=dict(l=60, r=60, t=50, b=40),
+                yaxis=dict(
+                    title="가격",
+                    range=[
+                        min(p["price"] for p in price_lines) - 5,
+                        max(p["price"] for p in price_lines) + 10
+                    ]
+                ),
+                plot_bgcolor="black",
+                paper_bgcolor="black",
+                font=dict(color="white"),
+                showlegend=False
+            )
 
-                # ✅ 가격 라벨 표시
-                def price_label(y_val, label, color):
-                    return alt.Chart(pd.DataFrame({
-                        "Date": [max_date],
-                        "y": [y_val],
-                        "text": [f"{label}: {y_val:.2f}"]
-                    })).mark_text(
-                        align="left", dx=5, dy=-5, color=color, fontSize=11
-                    ).encode(
-                        x="Date:T", y="y:Q", text="text:N"
-                    )
+            st.markdown(f"#### 📊 {t} ({meta['date']} 기준)")
+            st.plotly_chart(fig, use_container_width=True)
 
-
-                buy_label = price_label(meta["buy_target"], "매수", "green")
-                sell_label = price_label(meta["sell_target"], "목표", "orange")
-                stop_label = price_label(meta["stop_loss"], "손절", "red")
-
-                st.markdown(f"#### 📈 {t}")
-                chart = (
-                        band + stop_line +
-                        close_line + upper_line + middle_line + lower_line +
-                        buy_label + sell_label + stop_label
-                ).properties(height=320).interactive().configure_view(clip=False)
-
-                st.altair_chart(chart, use_container_width=True)
 
     # 📈 상승 기대 종목 (갭 조건 제거)
     st.subheader("📈 상승 기대 종목")
@@ -273,18 +311,6 @@ if data:
                     (df["풋 거래량"].isna())
             )
             ],
-        use_container_width=True
-    )
-
-    # 🚀 갭 상승 + 거래량 급등 종목
-    st.subheader("🚀 갭 상승 + 거래량 급등 종목")
-    st.dataframe(
-        df[
-            (df["갭상승률(%)"] > 2.0) &
-            (df["거래량배율"] > 1.8) &
-            (df["RSI"] < 75) &
-            (df["추세"] == "상승")
-        ],
         use_container_width=True
     )
 
