@@ -44,6 +44,25 @@ with st.expander("📋 현재 선택된 종목 / 삭제", expanded=False):
     else:
         st.markdown("➕ 종목을 추가해주세요!")
 
+# ✅ 리채널링 함수
+def reset_channel_if_breakout(meta):
+    if meta["close"] > meta["sell_target"]:
+        base = meta["ma_20"]
+        new_sell = round(base * 1.08, 2)
+        if new_sell > meta["close"]:
+            meta["buy_target"] = round(base * 0.96, 2)
+            meta["sell_target"] = new_sell
+            meta["stop_loss"] = round(base * 0.96 * 0.98, 2)
+            meta["채널 리셋됨"] = True
+        else:
+            meta["채널 리셋됨"] = False
+    else:
+        meta["채널 리셋됨"] = False
+
+# ✅ 리채널링 먼저 적용
+for t in valid_tickers:
+    reset_channel_if_breakout(st.session_state.ticker_data[t])
+
 # ✅ 분석 데이터 표시
 data = [st.session_state.ticker_data[t] for t in valid_tickers]
 if data:
@@ -138,7 +157,7 @@ if data:
                     emoji = item.get("sentiment_emoji", "⚪️")
                     st.markdown(f"- {emoji} {item['title']}")
 
-    # 📊 핵심 가격대 요약 차트 (정렬된 수평선)
+    # ✅ 평가 함수 (adjusted 기준 사용)
     def evaluate_breakout(meta):
         signals = 0
         reasons = []
@@ -146,41 +165,38 @@ if data:
         if meta["close"] > meta["buy_target"]:
             signals += 1
             reasons.append("채널 상단 돌파")
-
         if meta.get("volume_rate") and meta["volume_rate"] >= 1.2:
             signals += 1
             reasons.append("거래량↑")
-
         if 50 <= meta["rsi"] <= 72:
             signals += 1
             reasons.append("RSI 양호")
-
         if meta["ma_5"] > meta["ma_20"]:
             signals += 1
             reasons.append("골든크로스 유지")
-
         if meta["gap_pct"] > 0.3:
             signals += 1
             reasons.append("갭 상승")
-
         if 0 <= meta["deviation_pct"] <= 8:
             signals += 1
             reasons.append("이격도 정상")
 
         if signals >= 4:
-            status = "🔥 돌파 가능성 높음"
+            return "🔥 돌파 가능성 높음", reasons
         elif signals >= 2:
-            status = "⚖️ 관망 (부분 조건 만족)"
+            return "⚖️ 관망 (부분 조건 만족)", reasons
         else:
-            status = "❌ 돌파 신호 아님"
-
-        return status, reasons
+            return "❌ 돌파 신호 아님", reasons
 
 
+    # ✅ 시각화 루프
     with st.expander("📊 핵심 가격대 요약 (Plotly)", expanded=False):
         for t in valid_tickers:
             meta = st.session_state.ticker_data[t]
-            breakout_status = evaluate_breakout(meta)
+
+            status, reasons = evaluate_breakout(meta)
+            reasons_str = " / ".join(reasons)
+            combined_text = f"🚦 {status}  ｜  📋 {reasons_str}"
 
             price_lines = [
                 {"label": "손절가", "price": meta["stop_loss"], "color": "red"},
@@ -209,12 +225,6 @@ if data:
                     borderpad=4
                 )
 
-            # ✅ 상단 상태 표시 텍스트
-            status, reasons = evaluate_breakout(meta)
-            reasons_str = " / ".join(reasons)
-            combined_text = f"🚦 {status}  ｜  📋 {reasons_str}"
-
-            # 상단 좌측 고정 표시
             fig.add_annotation(
                 x=0, xref="paper",
                 y=max(p["price"] for p in price_lines) + 10, yref="y",
@@ -244,7 +254,6 @@ if data:
 
             st.markdown(f"#### 📊 {t} ({meta['date']} 기준)")
             st.plotly_chart(fig, use_container_width=True)
-
 
     # 📈 상승 기대 종목 (갭 조건 제거)
     st.subheader("📈 상승 기대 종목")
