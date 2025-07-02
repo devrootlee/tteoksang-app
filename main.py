@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+import altair as alt
 from stock_daily_data import get_prev_day_price
 
 # ✅ 세션 상태 초기화
@@ -74,6 +75,9 @@ if data:
             "max_put_strike",
             "max_put_volume",
             "option_expiry",
+            "buy_target",
+            "sell_target",
+            "stop_loss",
             "score"
         ]
     ]
@@ -106,7 +110,10 @@ if data:
         "max_put_strike": "풋 집중 행사가",
         "max_put_volume": "풋 거래량",
         "option_expiry": "옵션 만기일",
-        "score": "종합 점수"
+        "buy_target": "매수 적정가",
+        "sell_target": "기대 매도가",
+        "stop_loss": "손절가",
+        "score": "종합 점수",
     })
 
     def interpret_score(score):
@@ -130,6 +137,76 @@ if data:
                 for item in news:
                     emoji = item.get("sentiment_emoji", "⚪️")
                     st.markdown(f"- {emoji} {item['title']}")
+
+    # 📊 종목별 180일 차트 시각화
+    with st.expander("📊 종목별 180일 차트", expanded=False):
+        for t in valid_tickers:
+            meta = st.session_state.ticker_data[t]
+            chart_data = meta.get("chart_history")
+            if chart_data:
+                df_chart = pd.DataFrame(chart_data)
+
+                if "Date" not in df_chart.columns:
+                    st.warning(f"{t}의 차트에 'Date' 컬럼이 없습니다.")
+                    continue
+
+                df_chart["Date"] = pd.to_datetime(df_chart["Date"])
+                max_date = df_chart["Date"].max()
+                min_date = df_chart["Date"].min()
+
+                # ✅ 채널 영역용 DataFrame
+                channel_df = pd.DataFrame({
+                    "Date": [min_date, max_date],
+                    "buy": [meta["buy_target"]] * 2,
+                    "sell": [meta["sell_target"]] * 2,
+                    "stop": [meta["stop_loss"]] * 2
+                })
+
+                # ✅ 차트 기반
+                chart_base = alt.Chart(df_chart).encode(x="Date:T")
+
+                # ✅ 채널 영역 (buy~sell)
+                band = alt.Chart(channel_df).mark_area(opacity=0.15, color='green').encode(
+                    x="Date:T",
+                    y="buy:Q",
+                    y2="sell:Q"
+                )
+
+                # ✅ Stop loss 선
+                stop_line = alt.Chart(channel_df).mark_rule(color="red", strokeDash=[4, 2]).encode(y="stop:Q")
+
+                # ✅ 가격선
+                close_line = chart_base.mark_line(color="white").encode(y="Close:Q")
+                upper_line = chart_base.mark_line(strokeDash=[4, 2], color="red").encode(y="bollinger_upper:Q")
+                middle_line = chart_base.mark_line(strokeDash=[2, 2], color="gray").encode(y="bollinger_middle:Q")
+                lower_line = chart_base.mark_line(strokeDash=[4, 2], color="blue").encode(y="bollinger_lower:Q")
+
+
+                # ✅ 가격 라벨 표시
+                def price_label(y_val, label, color):
+                    return alt.Chart(pd.DataFrame({
+                        "Date": [max_date],
+                        "y": [y_val],
+                        "text": [f"{label}: {y_val:.2f}"]
+                    })).mark_text(
+                        align="left", dx=5, dy=-5, color=color, fontSize=11
+                    ).encode(
+                        x="Date:T", y="y:Q", text="text:N"
+                    )
+
+
+                buy_label = price_label(meta["buy_target"], "매수", "green")
+                sell_label = price_label(meta["sell_target"], "목표", "orange")
+                stop_label = price_label(meta["stop_loss"], "손절", "red")
+
+                st.markdown(f"#### 📈 {t}")
+                chart = (
+                        band + stop_line +
+                        close_line + upper_line + middle_line + lower_line +
+                        buy_label + sell_label + stop_label
+                ).properties(height=320).interactive().configure_view(clip=False)
+
+                st.altair_chart(chart, use_container_width=True)
 
     # 📈 상승 기대 종목 (갭 조건 제거)
     st.subheader("📈 상승 기대 종목")
@@ -291,7 +368,7 @@ if data:
     st.subheader("🔥 과열 경고 종목")
     st.dataframe(
         df[
-            (df["RSI"] >= 78) &
+            (df["RSI"] >= 75) &
             (df["갭상승률(%)"] > 2.0) &
             (df["거래량배율"] >= 2.2) &
             (df["이격도(%)"] >= 10)
