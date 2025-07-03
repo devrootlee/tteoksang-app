@@ -5,4 +5,4 @@ beautifulsoup4
 requests
 vaderSentiment
 plotly
-ccxt
+ccxt==1.61.91
