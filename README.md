@@ -18,13 +18,6 @@ Finviz 뉴스, RSI, 이동평균, 볼린저밴드, 옵션 데이터 등을 활�
 
 ---
 
-## 📷 데모
-앱 접속 👉 [https://tteoksang-app-7b3n2gztfpiecc4mfww4yp.streamlit.app](https://tteoksang-app-7b3n2gztfpiecc4mfww4yp.streamlit.app)
-
-![demo-gif](demo.gif) <!-- 데모 이미지 삽입시 -->
-
----
-
 ## 🧰 사용 기술
 
 - `Python 3.9+`
