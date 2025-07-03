@@ -10,6 +10,16 @@ if "tickers" not in st.session_state:
 if "ticker_data" not in st.session_state:
     st.session_state.ticker_data = {}
 
+# ✅ 앱 진입 시 기본 분석 티커 자동 로딩
+default_tickers = ["OPTT", "SEZL", "QBTS", "AAPL", "AMZN", "APP", "INTC", "MSTR", "PLTR", "TSLA"]
+
+for t in default_tickers:
+    if t not in st.session_state.tickers:
+        info = get_prev_day_price(t)
+        if info:
+            st.session_state.tickers.append(t)
+            st.session_state.ticker_data[t] = info
+
 # ✅ Streamlit 설정
 st.set_page_config(page_title="📊 떡상", layout="wide")
 st.title("📊 떡상")
@@ -413,3 +423,4 @@ if data:
 
 else:
     st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
+
