@@ -29,10 +29,11 @@ with tab1:
     default_tickers = ["OPTT", "SEZL", "QBTS", "AAPL", "AMZN", "APP", "INTC", "MSTR", "PLTR", "TSLA"]
     for t in default_tickers:
         if t not in st.session_state.tickers:
-            info = get_stock_data(t)
-            if info:
-                st.session_state.tickers.append(t)
-                st.session_state.ticker_data[t] = info
+            with st.spinner(f"🔍 {t} 분석 중..."):
+                info = get_stock_data(t)
+                if info:
+                    st.session_state.tickers.append(t)
+                    st.session_state.ticker_data[t] = info
 
     # 새 티커 추가 처리
     if st.session_state.new_ticker:
@@ -40,15 +41,16 @@ with tab1:
         if new_ticker in st.session_state.tickers:
             st.toast(f"⚠️ 이미 추가된 종목입니다: {new_ticker}", icon="⚠️")
         else:
-            info = get_stock_data(new_ticker)
-            if info:
-                st.session_state.tickers.append(new_ticker)
-                st.session_state.ticker_data[new_ticker] = info
-            else:
-                box = st.empty()
-                box.warning(f"❌ 데이터를 불러올 수 없는 종목: {new_ticker}")
-                time.sleep(5)
-                box.empty()
+            with st.spinner(f"🔍 {new_ticker} 분석 중..."):
+                info = get_stock_data(new_ticker)
+                if info:
+                    st.session_state.tickers.append(new_ticker)
+                    st.session_state.ticker_data[new_ticker] = info
+                else:
+                    box = st.empty()
+                    box.warning(f"❌ 데이터를 불러올 수 없는 종목: {new_ticker}")
+                    time.sleep(5)
+                    box.empty()
         st.session_state.new_ticker = None
 
     new_ticker = st.text_input("🎯 분석할 종목을 입력하세요 (하나씩 추가)", "").upper()
@@ -114,7 +116,7 @@ with tab1:
 
                 fig.update_layout(height=320, margin=dict(l=60, r=60, t=50, b=40),
                                   yaxis=dict(title="가격", range=[min(p["price"] for p in price_lines) - 5,
-                                                                 max(p["price"] for p in price_lines) + 10]),
+                                                                max(p["price"] for p in price_lines) + 10]),
                                   plot_bgcolor="black", paper_bgcolor="black", font=dict(color="white"),
                                   showlegend=False)
 
@@ -178,10 +180,11 @@ with tab2:
     default_coins = ["BTC/USDT", "ETH/USDT"]
     for coin in default_coins:
         if coin not in st.session_state.coin_tickers:
-            info = get_coin_data(coin)
-            if info:
-                st.session_state.coin_tickers.append(coin)
-                st.session_state.coin_ticker_data[coin] = info
+            with st.spinner(f"🔍 {coin} 분석 중..."):
+                info = get_coin_data(coin)
+                if info:
+                    st.session_state.coin_tickers.append(coin)
+                    st.session_state.coin_ticker_data[coin] = info
 
     # 코인 심볼 입력 및 추가
     symbol = st.text_input("🔍 분석할 코인 심볼 (예: BTC/USDT)", "BTC/USDT").upper()
@@ -194,15 +197,16 @@ with tab2:
         if new_ticker in st.session_state.coin_tickers:
             st.toast(f"⚠️ 이미 추가된 코인입니다: {new_ticker}", icon="⚠️")
         else:
-            info = get_coin_data(new_ticker)
-            if info:
-                st.session_state.coin_tickers.append(new_ticker)
-                st.session_state.coin_ticker_data[new_ticker] = info
-            else:
-                box = st.empty()
-                box.warning(f"❌ 데이터를 불러올 수 없는 코인: {new_ticker}")
-                time.sleep(5)
-                box.empty()
+            with st.spinner(f"🔍 {new_ticker} 분석 중..."):
+                info = get_coin_data(new_ticker)
+                if info:
+                    st.session_state.coin_tickers.append(new_ticker)
+                    st.session_state.coin_ticker_data[new_ticker] = info
+                else:
+                    box = st.empty()
+                    box.warning(f"❌ 데이터를 불러올 수 없는 코인: {new_ticker}")
+                    time.sleep(5)
+                    box.empty()
         st.session_state.new_coin_ticker = None
 
     # 선택된 코인 목록 표시 및 삭제
