@@ -143,31 +143,74 @@ def evaluate_breakout(meta):
     return "❌ 돌파 신호 아님", reasons
 
 # 데이터프레임 생성
-def create_dataframe(ticker_data, valid_tickers):
+def create_stock_dataframe(ticker_data, valid_tickers):
     data = [ticker_data[t] for t in valid_tickers]
     if not data:
         return None
 
     df = pd.DataFrame(data)
     df = df[[
-        "ticker", "date", "change_pct", "gap_pct", "high", "low", "close", "volume",
-        "volume_rate", "rsi", "ma_5", "ma_20", "prev_ma_5", "prev_ma_20", "trend",
-        "deviation_pct", "bollinger_upper", "bollinger_lower", "avg_volume_5d",
-        "max_call_strike", "max_call_volume", "max_put_strike", "max_put_volume",
-        "option_expiry", "buy_target", "sell_target", "stop_loss", "score"
+        "ticker",
+        "date",
+        "change_pct",
+        "gap_pct",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "volume_rate",
+        "rsi",
+        "ma_5",
+        "ma_20",
+        "prev_ma_5",
+        "prev_ma_20",
+        "trend",
+        "deviation_pct",
+        "bollinger_upper",
+        "bollinger_lower",
+        "avg_volume_5d",
+        "max_call_strike",
+        "max_call_volume",
+        "max_put_strike",
+        "max_put_volume",
+        "option_expiry",
+        "buy_target",
+        "sell_target",
+        "stop_loss",
+        "score"
     ]]
     df["change_pct"] = pd.to_numeric(df["change_pct"], errors="coerce")
     df = df.dropna(subset=["change_pct"])
 
     df = df.rename(columns={
-        "ticker": "종목코드", "date": "날짜", "change_pct": "등락률(%)", "gap_pct": "갭상승률(%)",
-        "high": "전일고가", "low": "전일저가", "close": "종가", "volume": "거래량",
-        "volume_rate": "거래량배율", "rsi": "RSI", "ma_5": "5일이평", "ma_20": "20일이평",
-        "prev_ma_5": "전일 5일이평", "prev_ma_20": "전일 20일이평", "trend": "추세",
-        "deviation_pct": "이격도(%)", "bollinger_upper": "볼린저상단", "bollinger_lower": "볼린저하단",
-        "avg_volume_5d": "5일평균거래량", "max_call_strike": "콜 집중 행사가", "max_call_volume": "콜 거래량",
-        "max_put_strike": "풋 집중 행사가", "max_put_volume": "풋 거래량", "option_expiry": "옵션 만기일",
-        "buy_target": "매수 적정가", "sell_target": "기대 매도가", "stop_loss": "손절가", "score": "종합 점수"
+        "ticker": "종목코드",
+        "date": "날짜",
+        "change_pct": "등락률(%)",
+        "gap_pct": "갭상승률(%)",
+        "high": "전일고가",
+        "low": "전일저가",
+        "close": "종가",
+        "volume": "거래량",
+        "volume_rate": "거래량배율",
+        "rsi": "RSI",
+        "ma_5": "5일이평",
+        "ma_20": "20일이평",
+        "prev_ma_5": "전일 5일이평",
+        "prev_ma_20": "전일 20일이평",
+        "trend": "추세",
+        "deviation_pct": "이격도(%)",
+        "bollinger_upper": "볼린저상단",
+        "bollinger_lower": "볼린저하단",
+        "avg_volume_5d": "5일평균거래량",
+        "max_call_strike": "콜 집중 행사가",
+        "max_call_volume": "콜 거래량",
+        "max_put_strike": "풋 집중 행사가",
+        "max_put_volume": "풋 거래량",
+        "option_expiry": "옵션 만기일",
+        "buy_target": "매수 적정가",
+        "sell_target": "기대 매도가",
+        "stop_loss": "손절가",
+        "score": "종합 점수"
     })
     df["점수 해석"] = df["종합 점수"].apply(interpret_score)
     return df
