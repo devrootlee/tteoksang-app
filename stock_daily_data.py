@@ -202,10 +202,17 @@ def get_combined_scan_tickers(limit_yahoo=50, search_limit=20):
 
     # ✅ 2. 섹터별 스크리너 (JSON 기반으로 대체)
     screener_ids = {
-        "Technology": "ms_technology",
-        "Semiconductors": "ms_semiconductors",
-        "Energy": "ms_energy",
-        "Consumer Cyclical": "ms_consumer_cyclical"
+        "Technology": "ms_technology",  # 기술 섹터 (IT, 소프트웨어, 하드웨어 등)
+        "Energy": "ms_energy",  # 에너지 섹터 (석유, 가스, 재생 에너지 등)
+        "Consumer Cyclical": "ms_consumer_cyclical",  # 소비재 순환 섹터 (자동차, 소매, 여행 등)
+        "Financial Services": "ms_financial_services",  # 금융 서비스 섹터 (은행, 보험, 투자 등)
+        "Healthcare": "ms_healthcare",  # 헬스케어 섹터 (제약, 바이오테크, 의료 장비 등)
+        "Industrials": "ms_industrials",  # 산업 섹터 (제조, 건설, 항공 등)
+        "Consumer Defensive": "ms_consumer_defensive",  # 소비재 방어 섹터 (식품, 음료, 필수 소비재 등)
+        "Utilities": "ms_utilities",  # 유틸리티 섹터 (전력, 수도, 가스 공급 등)
+        "Basic Materials": "ms_basic_materials",  # 기초 소재 섹터 (화학, 금속, 광업 등)
+        "Communication Services": "ms_communication_services",  # 통신 서비스 섹터 (미디어, 통신, 인터넷 등)
+        "Real Estate": "ms_real_estate"  # 부동산 섹터 (부동산 개발, REIT 등)
     }
 
     for sector, scr_id in screener_ids.items():
