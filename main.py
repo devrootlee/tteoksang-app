@@ -12,7 +12,8 @@ from stock_daily_data import (
     filter_call_dominant_stocks, filter_put_dominant_stocks, filter_call_breakout_stocks,
     filter_put_breakout_stocks, filter_overheated_stocks, get_combined_scan_tickers, filter_hidden_gems
 )
-from market_daily_data import (get_nasdaq_index, get_sp500_index, get_fear_greed_index, get_vix_index, get_sector_flows)
+from market_daily_data import (get_nasdaq_index, get_sp500_index, get_fear_greed_index, get_vix_index,
+                               get_sector_flows, summarize_market_condition, get_futures_index)
 
 
 # 캐싱된 데이터프레임 생성 함수
@@ -76,15 +77,48 @@ def cached_filter_short_squeeze_potential(df):
 
 # UI 렌더링
 st.set_page_config(page_title="📊 떡상", layout="wide")
-st.title("📊 떡상")
+st.title("📈🔥🚀 떡상")
 tab1, tab2, tab3 = st.tabs(["시장 분석", "📈 주식 분석", "💎 보석 발굴"])
 
 with tab1:
     st.subheader("시장 분석")
 
-    # Nasdaq 100 지수
+    # ✅ 새로고침 버튼
+    if st.button("📥 시장 지표 새로고침"):
+        for key in ["nasdaq", "sp500", "vix", "fear_greed", "sector_df", "futures_nq", "futures_es", "market_data_loaded"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+
+    # ✅ 시장 데이터 초기 로딩 (캐싱)
+    if "market_data_loaded" not in st.session_state:
+        with st.spinner("📊 시장 데이터 불러오는 중..."):
+            st.session_state["nasdaq"] = get_nasdaq_index()
+            st.session_state["sp500"] = get_sp500_index()
+            st.session_state["vix"] = get_vix_index()
+            st.session_state["fear_greed"] = get_fear_greed_index(
+                vix_data=st.session_state["vix"] if "error" not in st.session_state["vix"] else None
+            )
+            st.session_state["sector_df"] = get_sector_flows()
+            st.session_state["futures_nq"] = get_futures_index("NQ=F", "Nasdaq 선물")
+            st.session_state["futures_es"] = get_futures_index("ES=F", "S&P 선물")
+            st.session_state["market_data_loaded"] = True
+
+    # ✅ 세션에서 불러오기
+    nasdaq = st.session_state["nasdaq"]
+    sp500 = st.session_state["sp500"]
+    vix = st.session_state["vix"]
+    fear_greed = st.session_state["fear_greed"]
+    sector_df = st.session_state["sector_df"]
+    futures_nq = st.session_state["futures_nq"]
+    futures_es = st.session_state["futures_es"]
+
+    # ✅ 요약 생성 및 표시
+    summary = summarize_market_condition(nasdaq, sp500, vix, fear_greed, sector_df, futures_nq, futures_es)
+    st.markdown("### 🧭 시장 총평")
+    st.success(summary)
+
+    # ✅ 개별 지표 시각화
     st.markdown("### 📈 Nasdaq 100 지수")
-    nasdaq = get_nasdaq_index()
     if "error" not in nasdaq:
         st.metric(
             label="Nasdaq 100",
@@ -95,9 +129,7 @@ with tab1:
     else:
         st.warning(nasdaq["error"])
 
-    # S&P 500 지수
     st.markdown("### 📈 S&P 500 지수")
-    sp500 = get_sp500_index()
     if "error" not in sp500:
         st.metric(
             label="S&P 500",
@@ -108,9 +140,7 @@ with tab1:
     else:
         st.warning(sp500["error"])
 
-    # VIX 지수
     st.markdown("### 📉 VIX 변동성 지수")
-    vix = get_vix_index()
     if "error" not in vix:
         st.metric(
             label="VIX",
@@ -121,12 +151,10 @@ with tab1:
     else:
         st.warning(vix["error"])
 
-    # 공포탐욕 지수
     st.markdown("### 😨 공포탐욕 지수")
-    fear_greed = get_fear_greed_index(vix_data=vix if "error" not in vix else None)
     if "error" not in fear_greed:
         st.metric(
-            label="feer&greed",
+            label="Fear & Greed",
             value=fear_greed["지수"],
             delta=fear_greed["상태"],
             delta_color="normal"
@@ -134,9 +162,34 @@ with tab1:
     else:
         st.warning(fear_greed["error"])
 
-    # 섹터별 ETF 흐름
+    # ✅ 선물 지수 시각화
+    st.markdown("### 📊 선물 지수")
+    col1, col2 = st.columns(2)
+    with col1:
+        if "error" not in futures_nq:
+            price = futures_nq["현재가"]
+            delta = futures_nq["등락률(%)"]
+            if isinstance(price, pd.Series):
+                price = price.item()
+            if isinstance(delta, pd.Series):
+                delta = delta.item()
+            st.metric("Nasdaq 선물", value=price, delta=f"{delta}%", delta_color="normal")
+        else:
+            st.warning(futures_nq["error"])
+    with col2:
+        if "error" not in futures_es:
+            price = futures_es["현재가"]
+            delta = futures_es["등락률(%)"]
+            if isinstance(price, pd.Series):
+                price = price.item()
+            if isinstance(delta, pd.Series):
+                delta = delta.item()
+            st.metric("S&P 선물", value=price, delta=f"{delta}%", delta_color="normal")
+        else:
+            st.warning(futures_es["error"])
+
+    # ✅ 섹터 흐름 시각화
     st.markdown("### 🔥 자금 유입 중인 섹터")
-    sector_df = get_sector_flows()
     if not sector_df.empty and "error" not in sector_df.columns:
         st.dataframe(sector_df.sort_values(by="전일대비(%)", ascending=False), use_container_width=True)
     else:
@@ -353,7 +406,9 @@ with tab2:
         st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
 
 with tab3:
-    st.subheader("💎 숨겨진 보석 발굴기")
+    st.subheader("💎 숨겨진 보석 발굴기(상장폐지된 주식이 발견될 수 있습니다.)")
+
+    # 버튼 클릭 → 스캔 시작
     if st.button("🔍 자동 스캔 시작"):
         with st.spinner("보석 종목 스캔 중..."):
             tickers = get_combined_scan_tickers(limit_yahoo=50, search_limit=20)
@@ -367,8 +422,18 @@ with tab3:
             df = create_stock_dataframe(ticker_data, list(ticker_data.keys()))
             gems = filter_hidden_gems(df)
 
-            if gems is None or gems.empty:
-                st.info("💤 아직 보석 같은 종목이 없습니다.")
-            else:
-                st.success(f"💎 {len(gems)}개 종목이 발굴되었습니다!")
-                st.dataframe(gems.sort_values(by="종합 점수", ascending=False), use_container_width=True)
+            # ✅ 세션 상태에 저장
+            st.session_state.auto_gems_df = df
+            st.session_state.auto_gems_result = gems
+            st.session_state.auto_gems_ticker_data = ticker_data
+
+    # ✅ 세션 상태가 있으면 항상 보여주기
+    if "auto_gems_result" in st.session_state:
+        gems = st.session_state.auto_gems_result
+        if gems is None or gems.empty:
+            st.info("💤 아직 보석 같은 종목이 없습니다.")
+        else:
+            st.success(f"💎 {len(gems)}개 종목이 발굴되었습니다!")
+            st.dataframe(gems.sort_values(by="종합 점수", ascending=False), use_container_width=True)
+    else:
+        st.info("🔍 먼저 [자동 스캔 시작]을 눌러주세요.")

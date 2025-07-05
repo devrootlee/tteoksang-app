@@ -184,44 +184,79 @@ def get_short_data(ticker):
 # 숨겨진 주식 발굴용 티커 수집 함수
 def get_combined_scan_tickers(limit_yahoo=50, search_limit=20):
     tickers = set()
+    headers = {"User-Agent": "Mozilla/5.0"}
 
+    # ✅ 1. Yahoo Most Active
     try:
-        url = "https://finance.yahoo.com/most-active"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        tables = pd.read_html(urllib.request.urlopen(req))
-        yahoo = tables[0]["Symbol"].dropna().astype(str).tolist()[:limit_yahoo]
-        tickers.update(yahoo)
+        url = "https://finance.yahoo.com/most-active/?start=0&count=50"
+        res = requests.get(url, headers=headers)
+        res.raise_for_status()
+        tables = pd.read_html(StringIO(res.text))  # ✅ DEPRECATED 우회
+        for table in tables:
+            if "Symbol" in table.columns:
+                yahoo = table["Symbol"].dropna().astype(str).tolist()[:limit_yahoo]
+                tickers.update(yahoo)
+                break
     except Exception as e:
-        print("Yahoo 티커 가져오기 실패:", e)
+        print("❌ Yahoo 인기 티커 수집 실패:", e)
 
-    # ETF 티커 수집 (BOTZ, SOXX, QTUM, CIBR, ARKK, ICLN)
-    etf_urls = {
-        "BOTZ": "https://etfdb.com/etf/BOTZ/#holdings",
-        "SOXX": "https://etfdb.com/etf/SOXX/#holdings",
-        "QTUM": "https://etfdb.com/etf/QTUM/#holdings",
-        "CIBR": "https://etfdb.com/etf/CIBR/#holdings",
-        "ARKK": "https://etfdb.com/etf/ARKK/#holdings",
-        "ICLN": "https://etfdb.com/etf/ICLN/#holdings"
+    # ✅ 2. 섹터별 스크리너 (JSON 기반으로 대체)
+    screener_ids = {
+        "Technology": "ms_technology",
+        "Semiconductors": "ms_semiconductors",
+        "Energy": "ms_energy",
+        "Consumer Cyclical": "ms_consumer_cyclical"
     }
-    for etf, url in etf_urls.items():
-        try:
-            html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text
-            tables = pd.read_html(StringIO(html))
-            for table in tables:
-                print(table)
-                if "Ticker" in table.columns and "Weight" in table.columns:
-                    df = table[["Ticker", "Weight"]].dropna()
-                    df["Weight"] = pd.to_numeric(df["Weight"].astype(str).str.replace("%", ""), errors="coerce")
-                    top_tickers = df.sort_values(by="Weight", ascending=False).head(search_limit)
-                    tickers.update(top_tickers["Ticker"].dropna().astype(str).tolist())
-                    break
-        except Exception as e:
-            print(f"{etf} 구성 종목 가져오기 실패:", e)
 
-    result = sorted([t for t in tickers if isinstance(t, str)])
-    if not result:
-        print("❌ [경고] 티커 수집 실패: 결과 비어 있음.")
-    return result
+    for sector, scr_id in screener_ids.items():
+        try:
+            json_url = f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds={scr_id}&count={search_limit}"
+            res = requests.get(json_url, headers=headers, timeout=5)
+            res.raise_for_status()
+
+            data = res.json()
+            quotes = data.get("finance", {}).get("result", [{}])[0].get("quotes", [])
+            sector_tickers = [q["symbol"] for q in quotes if "symbol" in q]
+
+            tickers.update(sector_tickers)
+            print(f"✅ {sector} 수집 완료:", sector_tickers)
+        except Exception as e:
+            print(f"❌ {sector} 수집 실패: {e}")
+
+    raw_result = sorted([t for t in tickers if isinstance(t, str)])
+    print(f"📦 수집된 총 티커 수: {len(raw_result)}")
+
+    # ✅ 유효성 검사로 필터링
+    valid_result = []
+    for t in raw_result:
+        if is_valid_ticker(t):
+            valid_result.append(t)
+        else:
+            print(f"⛔️ 무효 티커 제거됨: {t}")
+
+    print(f"✅ 최종 유효 티커 수: {len(valid_result)}")
+    print(valid_result)
+    return valid_result
+
+def is_valid_ticker(ticker):
+    try:
+        tk = yf.Ticker(ticker)
+        info = tk.info
+
+        # 가격이 존재하고 float 또는 int인지 + 유효한 quoteType, 거래소 확인
+        price = info.get("regularMarketPrice", None)
+
+        return (
+            info
+            and isinstance(price, (float, int))  # Series 아닌 진짜 수치
+            and pd.notna(price)
+            and price > 0
+            and info.get("quoteType") in ["EQUITY", "ETF"]
+            and bool(info.get("exchange"))  # 빈 문자열이 아님
+        )
+    except Exception as e:
+        print(f"⛔️ 유효성 검사 실패 ({ticker}): {e}")
+        return False
 
 # 데이터프레임 생성
 def create_stock_dataframe(ticker_data, valid_tickers):
@@ -266,6 +301,12 @@ def get_stock_data(ticker, retry_count=2):
         try:
             tk = yf.Ticker(ticker)
             info = tk.info
+
+            # ✅ 상장폐지, 가격 없는 티커는 바로 제외
+            if not is_valid_ticker(ticker):
+                print(f"⛔️ 무효 티커: {ticker}")
+                return None
+
             company_name = info.get("shortName", "")
             sector = info.get("sector", "Default")
             current_price = info.get("regularMarketPrice", None)
@@ -540,21 +581,29 @@ def filter_short_squeeze_potential(df, sector="Default"):
 
 def filter_hidden_gems(df, sector="Default"):
     sector_profile = SECTOR_PROFILES.get(sector, SECTOR_PROFILES["Default"])
+
+    # 결측치 처리
+    df["공매도비율(유동주식%)"] = df["공매도비율(유동주식%)"].fillna(0)
+    df["공매도비율"] = df["공매도비율"].fillna(0)
+    df["콜 거래량"] = df["콜 거래량"].fillna(0)
+    df["풋 거래량"] = df["풋 거래량"].fillna(0)
+
     return df[
-        (df["거래량배율"] >= sector_profile["volume_rate_min"]) &
-        (df["RSI"] >= sector_profile["rsi_lower"]) & (df["RSI"] <= sector_profile["rsi_upper"]) &
+        # 거래량배율 완화
+        (df["거래량배율"] >= max(sector_profile["volume_rate_min"] - 0.5, 0.8)) &
+        # RSI 범위 확장
+        (df["RSI"] >= sector_profile["rsi_lower"] - 10) &
+        (df["RSI"] <= sector_profile["rsi_upper"] + 5) &
+        # 추세
         (df["추세"].isin(["상승", "중립"])) &
-        (df["현재가"] <= df["매수 적정가"] * 1.05) &
+        # 현재가
+        (df["현재가"] <= df["매수 적정가"] * 1.15) &  # 10% → 15%로 완화
+        # 수급 조건 간소화
         (
-            (
-                (df["공매도비율(유동주식%)"].notna()) &
-                (df["공매도비율(유동주식%)"] >= 4) &  # 📌 조건 완화 (6 → 4)
-                (df["공매도비율"] >= 2)  # 📌 조건 완화 (3 → 2)
-            ) |
-            (
-                (df["콜 거래량"] > df["풋 거래량"]) |
-                (df["거래량배율"] >= sector_profile["volume_rate_min"] + 0.3)  # 📌 OR 조건 추가
-            )
+            (df["거래량배율"] >= sector_profile["volume_rate_min"]) |
+            (df["공매도비율(유동주식%)"] >= 2) |
+            (df["콜 거래량"] > df["풋 거래량"])
         ) &
-        (df["종합 점수"] >= 3)
+        # 종합 점수 완화
+        (df["종합 점수"] >= 2.5)
     ]

@@ -10,10 +10,6 @@ def get_nasdaq_index():
         # Nasdaq 100 데이터 다운로드
         nasdaq = yf.download("^NDX", period="7d", interval="1d", auto_adjust=False)
 
-        # 디버깅: 데이터와 컬럼 구조 출력
-        print("Nasdaq 데이터:\n", nasdaq.head())
-        print("Nasdaq 컬럼 구조:\n", nasdaq.columns)
-
         # 데이터프레임 유효성 검사
         if nasdaq is None or nasdaq.empty:
             return {"error": "Nasdaq 데이터가 비어 있습니다"}
@@ -56,10 +52,6 @@ def get_sp500_index():
     try:
         # S&P 500 데이터 다운로드
         sp500 = yf.download("^GSPC", period="7d", interval="1d", auto_adjust=False)
-
-        # 디버깅: 데이터와 컬럼 구조 출력
-        print("S&P 500 데이터:\n", sp500.head())
-        print("S&P 500 컬럼 구조:\n", sp500.columns)
 
         # 데이터프레임 유효성 검사
         if sp500 is None or sp500.empty:
@@ -149,10 +141,6 @@ def get_vix_index():
         # VIX 데이터 다운로드
         vix = yf.download("^VIX", period="7d", interval="1d", auto_adjust=False)
 
-        # 디버깅: 데이터와 컬럼 구조 출력
-        print("VIX 데이터:\n", vix)
-        print("컬럼 구조:\n", vix.columns)
-
         # 데이터프레임이 비어 있는지 확인
         if vix is None or vix.empty:
             return {"error": "VIX 데이터가 비어 있습니다"}
@@ -166,7 +154,6 @@ def get_vix_index():
             try:
                 # 'Close' 컬럼을 멀티인덱스에서 추출
                 vix_close = vix[('Close', '^VIX')]
-                print("멀티인덱스에서 추출된 Close 컬럼:\n", vix_close)
             except KeyError as ke:
                 return {"error": f"멀티인덱스에서 'Close' 컬럼을 찾을 수 없습니다: {str(ke)}"}
         else:
@@ -174,7 +161,6 @@ def get_vix_index():
             if "Close" not in vix.columns:
                 return {"error": "VIX 데이터에 'Close' 컬럼이 없습니다"}
             vix_close = vix["Close"]
-            print("단일 인덱스에서 추출된 Close 컬럼:\n", vix_close)
 
         # 최신 종가와 이전 전일 종가 추출
         latest_close = vix_close.iloc[-1]
@@ -272,3 +258,92 @@ def get_sector_flows():
         return pd.DataFrame(results) if results else pd.DataFrame(columns=["섹터", "ETF", "현재가", "전일대비(%)", "거래량배율", "상태"])
     except Exception as e:
         return pd.DataFrame({"error": [f"섹터 데이터 가져오기 실패: {str(e)}"]})
+# 선물 지수
+def get_futures_index(ticker: str, label: str = None):
+    try:
+        df = yf.download(ticker, period="2d", interval="1d", auto_adjust=False)
+        if df.empty or len(df) < 2:
+            return {"error": f"{label or ticker} 데이터 부족"}
+
+        prev = df["Close"].iloc[-2]
+        latest = df["Close"].iloc[-1]
+        pct = round((latest - prev) / prev * 100, 2)
+
+        return {
+            "label": label or ticker,
+            "현재가": round(latest, 2),
+            "등락률(%)": pct
+        }
+    except Exception as e:
+        return {"error": f"{label or ticker} 오류: {str(e)}"}
+
+# 시황 총평
+def summarize_market_condition(nasdaq, sp500, vix, fear_greed, sector_df, futures_nq=None, futures_es=None):
+    try:
+        remarks = []
+
+        # 주식 지수 평균
+        if "등락률(%)" in nasdaq and "등락률(%)" in sp500:
+            avg_index = (nasdaq["등락률(%)"] + sp500["등락률(%)"]) / 2
+            if avg_index > 1.0:
+                remarks.append("📈 시장 전반 강세")
+            elif avg_index < -1.0:
+                remarks.append("📉 시장 전반 약세")
+            else:
+                remarks.append("⚖️ 시장 중립 흐름")
+
+        # 선물 지수
+        if futures_nq and "등락률(%)" in futures_nq:
+            nq_change = futures_nq["등락률(%)"]
+            if isinstance(nq_change, pd.Series):
+                nq_change = nq_change.iloc[0]
+            if nq_change > 1.0:
+                remarks.append("🟢 나스닥 선물 강세")
+            elif nq_change < -1.0:
+                remarks.append("🔴 나스닥 선물 약세")
+
+        if futures_es and "등락률(%)" in futures_es:
+            es_change = futures_es["등락률(%)"]
+            if isinstance(es_change, pd.Series):
+                es_change = es_change.iloc[0]
+            if es_change > 1.0:
+                remarks.append("🟢 S&P 선물 강세")
+            elif es_change < -1.0:
+                remarks.append("🔴 S&P 선물 약세")
+
+        # VIX
+        if "전일 종가" in vix:
+            vix_val = vix["전일 종가"]
+            if vix_val < 15:
+                remarks.append("😌 변동성 낮음 (안정장세)")
+            elif vix_val > 20:
+                remarks.append("⚠️ 변동성 확대 중")
+            else:
+                remarks.append("🧐 변동성 중간 수준")
+
+        # 공포탐욕
+        if "상태" in fear_greed:
+            fg = str(fear_greed["상태"]).lower()
+            if "extreme fear" in fg or "fear" in fg:
+                remarks.append("😨 투자심리 위축")
+            elif "extreme greed" in fg or "greed" in fg:
+                remarks.append("🤩 과열 우려")
+            else:
+                remarks.append("🙂 심리 안정권")
+
+        # 섹터 분석
+        if isinstance(sector_df, pd.DataFrame) and not sector_df.empty and "전일대비(%)" in sector_df.columns:
+            sector_df["전일대비(%)"] = pd.to_numeric(sector_df["전일대비(%)"], errors="coerce")
+            clean_df = sector_df.dropna(subset=["전일대비(%)"])
+            strong_sectors = clean_df[clean_df["전일대비(%)"] > 1.0]
+
+            if len(strong_sectors) >= 3:
+                names = strong_sectors["섹터"].tolist()
+                remarks.append(f"🔋 섹터 전반 강세 흐름 ({', '.join(names[:5])})")
+
+        return " ｜ ".join(remarks) if remarks else "❓ 시장 상황 분석 불가"
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f"⚠️ 요약 실패: {str(e)}"
