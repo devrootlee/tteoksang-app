@@ -51,7 +51,7 @@ def compute_rsi(close_prices, period=14):
 # 실시간 RSI 계산
 def get_intraday_rsi(ticker, period=14):
     try:
-        data = yf.download(ticker, period="1d", interval="5m").dropna()
+        data = yf.download(ticker, period="1d", interval="5m", auto_adjust=False).dropna()
         if not data.empty:
             data["RSI"] = compute_rsi(data["Close"], period)
             return round(float(data["RSI"].iloc[-1]), 2)
@@ -208,6 +208,7 @@ def get_combined_scan_tickers(limit_yahoo=50, search_limit=20):
             html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text
             tables = pd.read_html(StringIO(html))
             for table in tables:
+                print(table)
                 if "Ticker" in table.columns and "Weight" in table.columns:
                     df = table[["Ticker", "Weight"]].dropna()
                     df["Weight"] = pd.to_numeric(df["Weight"].astype(str).str.replace("%", ""), errors="coerce")
