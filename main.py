@@ -78,10 +78,10 @@ def cached_filter_short_squeeze_potential(df):
 # UI 렌더링
 st.set_page_config(page_title="📊 떡상", layout="wide")
 st.title("📈🔥🚀 떡상")
-tab1, tab2, tab3 = st.tabs(["시장 분석", "📈 주식 분석", "💎 보석 발굴"])
+tab1, tab2, tab3 = st.tabs(["🛰️ 시장 분석", "📈 주식 분석", "💎 보석 발굴"])
 
 with tab1:
-    st.subheader("시장 분석")
+    st.subheader("🛰️ 시장 분석")
 
     # ✅ 새로고침 버튼
     if st.button("📥 시장 지표 새로고침"):
