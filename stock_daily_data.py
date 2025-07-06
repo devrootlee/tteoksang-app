@@ -20,7 +20,7 @@ SECTOR_PROFILES = {
 def fetch_finviz_news(ticker, max_items=5):
     url = f"https://finviz.com/quote.ashx?t={ticker}"
     headers = {"User-Agent": "Mozilla/5.0"}
-    res = requests.get(url, headers=headers, timeout=5)
+    res = requests.get(url, headers=headers, timeout=10)
     soup = BeautifulSoup(res.text, "html.parser")
     rows = soup.select("table.fullview-news-outer tr")
 
@@ -196,23 +196,18 @@ def get_combined_scan_tickers(limit_yahoo=50, search_limit=20):
             if "Symbol" in table.columns:
                 yahoo = table["Symbol"].dropna().astype(str).tolist()[:limit_yahoo]
                 tickers.update(yahoo)
+                print(f"✅ {tickers} 수집 완료:", tickers)
                 break
     except Exception as e:
         print("❌ Yahoo 인기 티커 수집 실패:", e)
 
-    # ✅ 2. 섹터별 스크리너 (JSON 기반으로 대체)
+    # ✅ 2. 섹터별 스크리너 (JSON 기반)
     screener_ids = {
-        "Technology": "ms_technology",  # 기술 섹터 (IT, 소프트웨어, 하드웨어 등)
-        "Energy": "ms_energy",  # 에너지 섹터 (석유, 가스, 재생 에너지 등)
-        "Consumer Cyclical": "ms_consumer_cyclical",  # 소비재 순환 섹터 (자동차, 소매, 여행 등)
-        "Financial Services": "ms_financial_services",  # 금융 서비스 섹터 (은행, 보험, 투자 등)
-        "Healthcare": "ms_healthcare",  # 헬스케어 섹터 (제약, 바이오테크, 의료 장비 등)
-        "Industrials": "ms_industrials",  # 산업 섹터 (제조, 건설, 항공 등)
-        "Consumer Defensive": "ms_consumer_defensive",  # 소비재 방어 섹터 (식품, 음료, 필수 소비재 등)
-        "Utilities": "ms_utilities",  # 유틸리티 섹터 (전력, 수도, 가스 공급 등)
-        "Basic Materials": "ms_basic_materials",  # 기초 소재 섹터 (화학, 금속, 광업 등)
-        "Communication Services": "ms_communication_services",  # 통신 서비스 섹터 (미디어, 통신, 인터넷 등)
-        "Real Estate": "ms_real_estate"  # 부동산 섹터 (부동산 개발, REIT 등)
+        "Technology": "ms_technology",
+        "Energy": "ms_energy",
+        "Consumer Cyclical": "ms_consumer_cyclical",
+        "Financial Services": "ms_financial_services",
+        "Healthcare": "ms_healthcare"
     }
 
     for sector, scr_id in screener_ids.items():
@@ -220,50 +215,18 @@ def get_combined_scan_tickers(limit_yahoo=50, search_limit=20):
             json_url = f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds={scr_id}&count={search_limit}"
             res = requests.get(json_url, headers=headers, timeout=5)
             res.raise_for_status()
-
             data = res.json()
             quotes = data.get("finance", {}).get("result", [{}])[0].get("quotes", [])
             sector_tickers = [q["symbol"] for q in quotes if "symbol" in q]
-
             tickers.update(sector_tickers)
             print(f"✅ {sector} 수집 완료:", sector_tickers)
         except Exception as e:
             print(f"❌ {sector} 수집 실패: {e}")
 
-    raw_result = sorted([t for t in tickers if isinstance(t, str)])
-    print(f"📦 수집된 총 티커 수: {len(raw_result)}")
-
-    # ✅ 유효성 검사로 필터링
-    valid_result = []
-    for t in raw_result:
-        if is_valid_ticker(t):
-            valid_result.append(t)
-        else:
-            print(f"⛔️ 무효 티커 제거됨: {t}")
-
-    print(f"✅ 최종 유효 티커 수: {len(valid_result)}")
-    print(valid_result)
-    return valid_result
-
-def is_valid_ticker(ticker):
-    try:
-        tk = yf.Ticker(ticker)
-        info = tk.info
-
-        # 가격이 존재하고 float 또는 int인지 + 유효한 quoteType, 거래소 확인
-        price = info.get("regularMarketPrice", None)
-
-        return (
-            info
-            and isinstance(price, (float, int))  # Series 아닌 진짜 수치
-            and pd.notna(price)
-            and price > 0
-            and info.get("quoteType") in ["EQUITY", "ETF"]
-            and bool(info.get("exchange"))  # 빈 문자열이 아님
-        )
-    except Exception as e:
-        print(f"⛔️ 유효성 검사 실패 ({ticker}): {e}")
-        return False
+    # ✅ 결과 반환 (유효성 검사 생략)
+    result = sorted([t for t in tickers if isinstance(t, str)])
+    print(f"📦 수집된 총 티커 수: {len(result)}개")
+    return result
 
 # 데이터프레임 생성
 def create_stock_dataframe(ticker_data, valid_tickers):
@@ -308,11 +271,6 @@ def get_stock_data(ticker, retry_count=2):
         try:
             tk = yf.Ticker(ticker)
             info = tk.info
-
-            # ✅ 상장폐지, 가격 없는 티커는 바로 제외
-            if not is_valid_ticker(ticker):
-                print(f"⛔️ 무효 티커: {ticker}")
-                return None
 
             company_name = info.get("shortName", "")
             sector = info.get("sector", "Default")
