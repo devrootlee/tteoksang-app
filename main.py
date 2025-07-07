@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import requests
 from bs4 import BeautifulSoup
+import base64
 import plotly.graph_objects as go
 from stock_daily_data import get_stock_data, create_stock_dataframe, evaluate_breakout, reset_channel_if_breakout, \
     filter_short_squeeze_potential
@@ -96,9 +97,27 @@ def cached_filter_short_squeeze_potential(df):
 PLOTLY_HEIGHT = 240 if IS_MOBILE else 320
 FONT_SIZE = 12 if IS_MOBILE else 14
 
+
+# 이미지 base64 인코딩 함수
+def get_image_base64(image_path):
+    with open(image_path, "rb") as img_file:
+        encoded = base64.b64encode(img_file.read()).decode()
+    return encoded
+
+# 아이콘 이미지 base64 문자열
+img_base64 = get_image_base64("떡상-icon.jpg")
+
 # UI 렌더링
 st.set_page_config(page_title="📊 떡상", layout="wide")
-st.title("📈🔥🚀 떡상")
+st.markdown(
+    f"""
+    <h1 style="display: flex; align-items: center; gap: 10px;">
+        <img src="data:image/jpeg;base64,{img_base64}" width="64">
+        떡상
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
 tab1, tab2, tab3, tab4 = st.tabs(["📖 Read Me", "🛰️시장 분석", "📈 주식 분석", "💎 보석 발굴"])
 
 with tab1:
