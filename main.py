@@ -16,6 +16,24 @@ from market_daily_data import (get_nasdaq_index, get_sp500_index, get_fear_greed
                                get_sector_flows, summarize_market_condition, get_futures_index)
 
 
+# ✅ 모바일 감지 함수
+@st.cache_data(show_spinner=False)
+def is_mobile_device():
+    try:
+        ua = st.experimental_user_agent()
+        return ua and ua.device_family in ["iPhone", "Android"]
+    except:
+        return False
+
+IS_MOBILE = is_mobile_device()
+
+# ✅ 캐시/세션 초기화 버튼
+with st.sidebar:
+    if st.button("🔁 캐시 / 세션 초기화 (모바일 문제 해결용)"):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+
 # 캐싱된 데이터프레임 생성 함수
 @st.cache_data
 def cached_create_stock_dataframe(ticker_data, valid_tickers):
@@ -74,6 +92,9 @@ def cached_filter_overheated_stocks(df):
 def cached_filter_short_squeeze_potential(df):
     return filter_short_squeeze_potential(df)
 
+# ✅ Plotly 설정 조정 함수
+PLOTLY_HEIGHT = 240 if IS_MOBILE else 320
+FONT_SIZE = 12 if IS_MOBILE else 14
 
 # UI 렌더링
 st.set_page_config(page_title="📊 떡상", layout="wide")
@@ -290,7 +311,7 @@ with tab3:
             st.success("✅ 데이터 새로고침 완료!")
 
     # 기본 티커 로딩 (최초 실행 시에만)
-    default_tickers = ["OPTT", "QBTS", "APP", "INTC", "PLTR", "TSLA"]
+    default_tickers = ["OPTT", "QBTS", "APP", "INTC", "PLTR", "CRNC"]
     if not st.session_state.tickers:  # 최초 실행 시에만 기본 티커 로드
         for t in default_tickers:
             if t not in st.session_state.ticker_data:
