@@ -261,19 +261,36 @@ def get_sector_flows():
 # 선물 지수
 def get_futures_index(ticker: str, label: str = None):
     try:
-        df = yf.download(ticker, period="2d", interval="1d", auto_adjust=False)
-        if df.empty or len(df) < 2:
-            return {"error": f"{label or ticker} 데이터 부족"}
+        df = yf.download(ticker, period="5d", interval="1d", auto_adjust=False)
 
-        prev = df["Close"].iloc[-2]
-        latest = df["Close"].iloc[-1]
-        pct = round((latest - prev) / prev * 100, 2)
+        # ✅ 멀티인덱스 컬럼 처리
+        if isinstance(df.columns, pd.MultiIndex):
+            if ("Close", ticker) not in df.columns:
+                return {"error": f"{label or ticker} 'Close' 컬럼이 없습니다 (멀티인덱스)"}
+            close_series = df[("Close", ticker)]
+        else:
+            if "Close" not in df.columns:
+                return {"error": f"{label or ticker} 'Close' 컬럼이 없습니다"}
+            close_series = df["Close"]
+
+        close_series = close_series.dropna()
+        if close_series.empty:
+            return {"error": f"{label or ticker} 종가 데이터 없음"}
+
+        if len(close_series) >= 2:
+            prev = close_series.iloc[-2]
+            latest = close_series.iloc[-1]
+            pct = round((latest - prev) / prev * 100, 2)
+        else:
+            latest = close_series.iloc[-1]
+            pct = "변동 없음"
 
         return {
             "label": label or ticker,
             "현재가": round(latest, 2),
             "등락률(%)": pct
         }
+
     except Exception as e:
         return {"error": f"{label or ticker} 오류: {str(e)}"}
 
@@ -282,36 +299,38 @@ def summarize_market_condition(nasdaq, sp500, vix, fear_greed, sector_df, future
     try:
         remarks = []
 
-        # 주식 지수 평균
+        # ✅ 지수 평균 등락 판단 (기준 ±0.8%)
         if "등락률(%)" in nasdaq and "등락률(%)" in sp500:
             avg_index = (nasdaq["등락률(%)"] + sp500["등락률(%)"]) / 2
-            if avg_index > 1.0:
+            if avg_index > 0.8:
                 remarks.append("📈 시장 전반 강세")
-            elif avg_index < -1.0:
+            elif avg_index < -0.8:
                 remarks.append("📉 시장 전반 약세")
             else:
                 remarks.append("⚖️ 시장 중립 흐름")
 
-        # 선물 지수
-        if futures_nq and "등락률(%)" in futures_nq:
-            nq_change = futures_nq["등락률(%)"]
-            if isinstance(nq_change, pd.Series):
-                nq_change = nq_change.iloc[0]
-            if nq_change > 1.0:
-                remarks.append("🟢 나스닥 선물 강세")
-            elif nq_change < -1.0:
-                remarks.append("🔴 나스닥 선물 약세")
+        # ✅ 선물 흐름 (강세/약세/약한 신호 구분)
+        def interpret_futures(futures_data, label):
+            if "등락률(%)" in futures_data:
+                change = futures_data["등락률(%)"]
+                if isinstance(change, pd.Series):
+                    change = change.iloc[0]
+                if change > 1.0:
+                    return f"🟢 {label} 강세"
+                elif change < -1.0:
+                    return f"🔴 {label} 약세"
+                elif change > 0.5:
+                    return f"☘️ {label} 약한 상승 흐름"
+                elif change < -0.5:
+                    return f"🍂 {label} 약한 하락 흐름"
+            return None
 
-        if futures_es and "등락률(%)" in futures_es:
-            es_change = futures_es["등락률(%)"]
-            if isinstance(es_change, pd.Series):
-                es_change = es_change.iloc[0]
-            if es_change > 1.0:
-                remarks.append("🟢 S&P 선물 강세")
-            elif es_change < -1.0:
-                remarks.append("🔴 S&P 선물 약세")
+        nq_msg = interpret_futures(futures_nq, "나스닥 선물")
+        es_msg = interpret_futures(futures_es, "S&P 선물")
+        if nq_msg: remarks.append(nq_msg)
+        if es_msg: remarks.append(es_msg)
 
-        # VIX
+        # ✅ VIX
         if "전일 종가" in vix:
             vix_val = vix["전일 종가"]
             if vix_val < 15:
@@ -321,22 +340,26 @@ def summarize_market_condition(nasdaq, sp500, vix, fear_greed, sector_df, future
             else:
                 remarks.append("🧐 변동성 중간 수준")
 
-        # 공포탐욕
+        # ✅ 공포탐욕 지수
         if "상태" in fear_greed:
             fg = str(fear_greed["상태"]).lower()
-            if "extreme fear" in fg or "fear" in fg:
+            if "extreme fear" in fg:
+                remarks.append("🚨 시장에 극단적 공포… 역사적 매수 기회일 수 있음")
+            elif "fear" in fg:
                 remarks.append("😨 투자심리 위축")
             elif "extreme greed" in fg or "greed" in fg:
                 remarks.append("🤩 과열 우려")
             else:
                 remarks.append("🙂 심리 안정권")
 
-        # 섹터 분석
+        # ✅ 섹터 흐름 분석 (상승률 1% 이상 + 거래량 배율 ≥ 1.2)
         if isinstance(sector_df, pd.DataFrame) and not sector_df.empty and "전일대비(%)" in sector_df.columns:
             sector_df["전일대비(%)"] = pd.to_numeric(sector_df["전일대비(%)"], errors="coerce")
-            clean_df = sector_df.dropna(subset=["전일대비(%)"])
-            strong_sectors = clean_df[clean_df["전일대비(%)"] > 1.0]
-
+            sector_df["거래량배율"] = pd.to_numeric(sector_df["거래량배율"], errors="coerce")
+            clean_df = sector_df.dropna(subset=["전일대비(%)", "거래량배율"])
+            strong_sectors = clean_df[
+                (clean_df["전일대비(%)"] > 1.0) & (clean_df["거래량배율"] >= 1.2)
+            ]
             if len(strong_sectors) >= 3:
                 names = strong_sectors["섹터"].tolist()
                 remarks.append(f"🔋 섹터 전반 강세 흐름 ({', '.join(names[:5])})")
