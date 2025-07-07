@@ -259,7 +259,7 @@ with tab2:
         error_msg = sector_df["error"].iloc[0] if "error" in sector_df.columns else "섹터 ETF 데이터를 불러오지 못했습니다."
         st.warning(error_msg)
 
-with tab2:
+with tab3:
     st.subheader("📈 주식 분석")
 
     # 세션 상태 초기화
@@ -468,7 +468,7 @@ with tab2:
     else:
         st.warning("분석 가능한 데이터가 없습니다. 종목을 추가해주세요.")
 
-with tab3:
+with tab4:
     st.subheader("💎 숨겨진 보석 발굴기(상장폐지된 주식이 발견될 수 있습니다.)")
 
     # 버튼 클릭 → 스캔 시작
