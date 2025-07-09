@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import base64
-# swing_stock_data 함수는 별도 파일(swing_stock_data.py)에서 임포트됩니다.
-from swing_stock_data import swing_stock_data  # 이 부분은 변경 없음
+
+from swing_stock_data import swing_stock_data
+from market_data import market_data
 
 
 # ✅ 모바일 감지 함수 (변경 없음)
@@ -66,8 +67,74 @@ with tab1:
 
 # ✅ tab2 (변경 없음)
 with tab2:
-    st.subheader("🛰️ 시장 분석")
-    st.info("준비 중입니다.")
+    st.subheader("🛰️ 미국장 시장 실시간 분석")
+
+    # 캐싱을 사용하여 market_data 호출 (데이터 로드 시간 단축)
+    @st.cache_data(ttl=300)  # 5분(300초)마다 데이터 새로고침
+    def get_market_data_cached():
+        return market_data()
+
+
+    with st.spinner("🚀 시장 데이터 불러오는 중..."):
+        market_outlook = get_market_data_cached()
+
+    if "error" in market_outlook:
+        st.error(f"시장 데이터 로드 중 오류 발생: {market_outlook['error']}")
+        st.info("데이터는 실시간으로 변동되거나 일시적으로 불안정할 수 있습니다. 잠시 후 다시 시도해주세요.")
+    else:
+        outlook_details = market_outlook['OverallMarketOutlook']
+        st.markdown(f"#### **{outlook_details['summary']}**")
+
+        if outlook_details.get("no_sector_trend"):
+            st.caption("섹터별 특별한 추세가 감지되지 않습니다.")
+        else:
+            if outlook_details['strong_sectors']:
+                st.markdown(f"- **주요 강세 섹터:** {', '.join(outlook_details['strong_sectors'])}")
+            if outlook_details['weak_sectors']:
+                st.markdown(f"- **주요 약세 섹터:** {', '.join(outlook_details['weak_sectors'])}")
+        st.caption("이 판단은 주요 지수, 변동성, 시장 심리 및 섹터별 흐름을 종합한 결과입니다.")
+
+        st.markdown("---")  # 구분선
+
+        st.markdown("### 🔍 주요 지수 현황")
+        col_nq, col_sp, col_vix = st.columns(3)
+
+        with col_nq:
+            st.metric(label="**나스닥 선물 (NQ=F)**",
+                      value=f"{market_outlook['NASDAQ']['price']:,}",
+                      delta=f"{market_outlook['NASDAQ']['change']:.2f}%")
+            st.caption(f"상태: {market_outlook['NASDAQ']['status']}")
+        with col_sp:
+            st.metric(label="**S&P500 선물 (ES=F)**",
+                      value=f"{market_outlook['S&P500']['price']:,}",
+                      delta=f"{market_outlook['S&P500']['change']:.2f}%")
+            st.caption(f"상태: {market_outlook['S&P500']['status']}")
+        with col_vix:
+            st.metric(label="**변동성 지수 (VIX)**",
+                      value=f"{market_outlook['VIX']['price']:.2f}",
+                      delta=f"{market_outlook['VIX']['change']:.2f}%")
+            st.caption(f"상태: {market_outlook['VIX']['status']}")
+
+        st.markdown("---")  # 구분선
+
+        st.markdown("### 📊 시장 심리: 공포 탐욕 지수")
+        fgi_col1, fgi_col2 = st.columns([1, 2])
+        with fgi_col1:
+            st.metric(label="**현재 공포 탐욕 값**", value=market_outlook['FearGreedIndex']['value'])
+        with fgi_col2:
+            st.markdown(f"**상태:** {market_outlook['FearGreedIndex']['status']}")
+            st.caption(f"상세 설명: {market_outlook['FearGreedIndex']['comment']}")
+
+        st.markdown("---")  # 구분선
+
+        st.markdown("### 📈 주요 섹터별 트렌드")
+        # 섹터 데이터를 DataFrame으로 변환하여 표로 보여주기
+        sector_df_data = []
+        for name, info in market_outlook['Sectors'].items():
+            sector_df_data.append({"섹터명": name, "티커": info['ticker'], "상태": info['status']})
+
+        sector_table_df = pd.DataFrame(sector_df_data)
+        st.dataframe(sector_table_df, use_container_width=True, hide_index=True)
 
 # ✅ tab4 (변경 없음)
 with tab4:
