@@ -211,7 +211,7 @@ with tab3:
 
     # 기본 종목 로딩 (앱 첫 실행 시만)
     if not st.session_state.tickers and not st.session_state.default_tickers_loaded:
-        default_tickers = ["OPTT", "QBTS", "APP", "INTC", "PLTR", "CRNC"]
+        default_tickers = ["OPTT", "APP", "INTC", "PLTR", "LAES"]
         default_load_successful_count = 0
         for t in default_tickers:
             with st.spinner(f"🔍 {t} 분석 중..."):
