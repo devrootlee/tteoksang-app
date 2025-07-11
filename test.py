@@ -70,7 +70,9 @@ def screen_stocks(tickers):
 
 
 if __name__ == "__main__":
-    tickers = ["AAPL", "MSFT", "GOOGL", "TSLA", "ABNB", "APP"]  # 테스트용 티커 리스트
+    tickers = ["TSS"]  # 테스트용 티커 리스트
+
+
 
     filtered_df = screen_stocks(tickers)
 
