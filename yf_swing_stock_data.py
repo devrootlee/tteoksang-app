@@ -63,7 +63,8 @@ def swing_stock_data(ticker):
     try:
         # ✅ 주가 데이터 다운로드 및 유효성 검사 (120일선 계산을 위해 기간 확장)
         # period="1y"는 약 252거래일 데이터를 제공, 120일선 계산에 충분
-        download = yf.download(ticker, period="1y", interval="1d", auto_adjust=False).dropna()
+        # auto_adjust=True로 변경: 분할/배당 조정된 가격으로 정확한 지표 계산
+        download = yf.download(ticker, period="1y", interval="1d", auto_adjust=True).dropna()
         if download.empty or len(download) < 120: # 최소 120일 데이터는 필요하도록 강화
             return {"ticker": ticker.upper(), "Recommendation": "❌ 데이터 부족 또는 불충분"}
 
@@ -260,6 +261,29 @@ def swing_stock_data(ticker):
         support_2nd = valid_supports[1] if len(valid_supports) > 1 else None
         support_3rd = valid_supports[2] if len(valid_supports) > 2 else None
 
+        # ✅ 저항선 계산 (볼린저 상단, 5일선, 20일선, 60일선, 120일선, 52주 고가 기준)
+        # 현재 가격보다 높은 저항선 후보들을 리스트에 담고 유효한 값만 필터링
+        resistance_candidates = []
+        if bb_upper is not None and current_price is not None and bb_upper > current_price:
+            resistance_candidates.append(bb_upper)
+        if prev_ma_5 is not None and current_price is not None and prev_ma_5 > current_price:
+            resistance_candidates.append(prev_ma_5)
+        if prev_ma_20 is not None and current_price is not None and prev_ma_20 > current_price:
+            resistance_candidates.append(prev_ma_20)
+        if prev_ma_60 is not None and current_price is not None and prev_ma_60 > current_price:
+            resistance_candidates.append(prev_ma_60)
+        if prev_ma_120 is not None and current_price is not None and prev_ma_120 > current_price:
+            resistance_candidates.append(prev_ma_120)
+        if high_52w is not None and current_price is not None and high_52w > current_price:
+            resistance_candidates.append(high_52w)
+
+        # 유효한 저항선 후보들을 낮은 가격부터 정렬하여 1차, 2차, 3차 저항선으로 할당
+        valid_resistances = sorted([r for r in resistance_candidates if r is not None])
+
+        resistance_1st = valid_resistances[0] if len(valid_resistances) > 0 else None
+        resistance_2nd = valid_resistances[1] if len(valid_resistances) > 1 else None
+        resistance_3rd = valid_resistances[2] if len(valid_resistances) > 2 else None
+
 
         # ✅ 가중치 기반 점수 계산
         score = 0.0
@@ -295,15 +319,16 @@ def swing_stock_data(ticker):
 
         # 2. RSI - 구간별 점수 (매수/매도 모멘텀)
         if latest_rsi is not None:
-            if 40 <= latest_rsi <= 60: # 중립/안정적 모멘텀
-                score += 1.0
-            elif 30 <= latest_rsi < 40: # 과매도권 진입 직전 (매수 준비)
-                score += 0.5
-            elif 60 < latest_rsi <= 70: # 상승 지속 중, 주의 필요
-                score += 0.2
-            elif latest_rsi < 30: # 과매도 (강력한 반등 기대)
-                score += 0.8
-            elif latest_rsi > 70: # 과매수 (과열, 단기 차익 실현 가능성)
+            # 과매도권 (매수 기회)
+            if latest_rsi < 30:
+                score += 1.0 # 강력한 반등 기대
+            elif 30 <= latest_rsi < 40:
+                score += 0.7 # 과매도권 진입 직전 (매수 준비)
+            # 중립 및 상승 모멘텀 구간 (RSI 70 미만까지 긍정)
+            elif 40 <= latest_rsi < 70: # 40 이상 70 미만은 긍정적인 모멘텀
+                score += 1.2
+            # ✅ 과매수권 (매도 고려/주의) - 70 이상으로 변경
+            elif latest_rsi >= 70: # 70 이상은 과매수
                 score -= 1.0
 
         # 3. 이격도 (MA_20 기준) - 적정 범위 중요 및 과대 이격 감점 강화
@@ -437,6 +462,14 @@ def swing_stock_data(ticker):
         is_sell_consider_signal = False
         is_strong_sell_signal = False
 
+        # ✅ is_good_rsi 판단 기준 변경 (RSI 70 미만까지 긍정으로 판단)
+        is_good_rsi = latest_rsi is not None and 35 <= latest_rsi < 70
+        is_good_disparity = disparity_20 is not None and 95 <= disparity_20 <= 105
+        is_sufficient_volume = volume_rate is not None and volume_rate >= 1.2
+        is_not_overheated_gap = gap_up_pct is not None and gap_up_pct < 2.0
+        is_bullish_macd = macd_value is not None and macd_signal is not None and macd_value > macd_signal and macd_value > 0
+
+
         # --- 매수 신호 조합 ---
         # 1. 사용자 핵심 전략: 3일 연속 음봉 + RSI 과매도 (강력 매수)
         if consecutive_close_status == "3일 연속 음봉" and latest_rsi is not None and latest_rsi <= 40:
@@ -449,7 +482,7 @@ def swing_stock_data(ticker):
         # 주가가 120일선 위에 있고, 20일선이 60일선 위에 있으며, RSI가 과매수권 아님
         if prev_ma_120 is not None and current_price is not None and current_price > prev_ma_120: # 장기 추세 상승
             if prev_ma_20 is not None and prev_ma_60 is not None and prev_ma_20 > prev_ma_60: # 중단기 정배열
-                if latest_rsi is not None and 30 < latest_rsi <= 60: # 과매수 아님
+                if is_good_rsi: # RSI 70 미만까지 긍정
                     if score >= 7.0 and macd_value is not None and macd_signal is not None and macd_value > macd_signal and volume_rate is not None and volume_rate >= profile["volume_rate_min"]:
                         is_buy_consider_signal = True # 📈 상승 추세 매수
                     elif score >= 6.0 and volume_rate is not None and volume_rate >= 0.8:
@@ -460,31 +493,31 @@ def swing_stock_data(ticker):
         if current_price is not None:
             # 1차 지지선 (MA 20) 근접
             if support_1st is not None and abs((current_price - support_1st) / support_1st * 100) <= 1.0: # 1% 이내 근접
-                if latest_rsi is not None and latest_rsi <= 50: # 과매수 아님
+                if latest_rsi is not None and latest_rsi <= 60: # 과매수 아님 (RSI 60까지는 매수 고려)
                     if score >= 5.5 and volume_rate is not None and volume_rate >= 0.8:
                         is_buy_consider_signal = True
             # 2차 지지선 (MA 60) 근접
             elif support_2nd is not None and abs((current_price - support_2nd) / support_2nd * 100) <= 1.0: # 1% 이내 근접
-                 if latest_rsi is not None and latest_rsi <= 45: # 과매수 아님
+                 if latest_rsi is not None and latest_rsi <= 55: # 과매수 아님 (RSI 55까지는 매수 고려)
                     if score >= 5.0 and volume_rate is not None and volume_rate >= 0.8:
                         is_buy_consider_signal = True
             # 3차 지지선 (MA 120) 근접
             elif support_3rd is not None and abs((current_price - support_3rd) / support_3rd * 100) <= 1.0: # 1% 이내 근접
-                if latest_rsi is not None and latest_rsi <= 40: # 과매도권에 가까울수록 좋음
+                if latest_rsi is not None and latest_rsi <= 50: # 과매도권에 가까울수록 좋음 (RSI 50까지는 매수 고려)
                     if score >= 4.5 and volume_rate is not None and volume_rate >= 0.7:
                         is_buy_consider_signal = True
 
 
         # --- 매도 신호 조합 ---
         # 1. 과매수 + 모멘텀 약화 (강력 매도)
-        if latest_rsi is not None and latest_rsi > 70: # RSI 과매수
+        if latest_rsi is not None and latest_rsi >= 70: # ✅ RSI 과매수 (70 이상)
             if stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_k < stoch_d: # 스토캐스틱 과매수 데드크로스
                 if macd_value is not None and macd_signal is not None and macd_value < macd_signal: # MACD 데드크로스
                     if score <= 5.0: # 점수가 낮아지면
                         is_strong_sell_signal = True
         # 2. 데드크로스 발생 (강력 매도)
         if trend == "데드크로스 발생":
-            if score <= 4.0 and current_price < prev_ma_60: # 60일선 아래 데드크로스면 더 강력
+            if score <= 4.0 and current_price is not None and prev_ma_60 is not None and current_price < prev_ma_60: # 60일선 아래 데드크로스면 더 강력
                 is_strong_sell_signal = True
 
         # 3. 과매수 + 모멘텀 둔화 (매도 고려)
@@ -496,12 +529,15 @@ def swing_stock_data(ticker):
             is_sell_consider_signal = True
 
         # 4. 저항선 근접 + 상승 둔화
-        if current_price is not None and bb_upper is not None and current_price >= bb_upper * 0.99 and current_price <= bb_upper * 1.01: # 볼린저 상단 근접
+        # 1차 저항선 (가장 가까운 저항) 근접 시 매도 고려
+        if current_price is not None and resistance_1st is not None and \
+           abs((current_price - resistance_1st) / resistance_1st * 100) <= 1.0: # 1% 이내 근접
             if latest_rsi is not None and latest_rsi >= 65: # RSI 높음
                 if volume_rate is not None and volume_rate < 1.0: # 거래량 감소
                     is_sell_consider_signal = True
-        if high_gap_pct is not None and high_gap_pct <= 1.0: # 52주 고가 근접
-            if latest_rsi is not None and latest_rsi >= 70: # RSI 과열
+        # 52주 고가 근접 시 매도 고려
+        if high_gap_pct is not None and high_gap_pct <= 1.0: # 52주 고가 1% 이내 근접
+            if latest_rsi is not None and latest_rsi >= 70: # ✅ RSI 과열 (70 이상)
                 is_sell_consider_signal = True
 
 
@@ -530,13 +566,13 @@ def swing_stock_data(ticker):
             "prev_close_price": prev_close_price,
             "MA_5": ma_5,
             "MA_20": ma_20,
-            "MA_60": prev_ma_60, # MA_60 추가
-            "MA_120": prev_ma_120, # MA_120 추가
+            "MA_60": prev_ma_60,
+            "MA_120": prev_ma_120,
             "RSI_14": latest_rsi,
             "Disparity_5": disparity_5,
             "Disparity_20": disparity_20,
             "Disparity_60": disparity_60,
-            "Disparity_120": disparity_120, # 120일 이격도 추가
+            "Disparity_120": disparity_120,
             "BB_Upper": bb_upper,
             "BB_Middle": bb_middle,
             "BB_Lower": bb_lower,
@@ -563,6 +599,9 @@ def swing_stock_data(ticker):
             "Support_1st": support_1st, # 1차 지지선 (가장 가까운)
             "Support_2nd": support_2nd, # 2차 지지선 (그 다음 가까운)
             "Support_3rd": support_3rd, # 3차 지지선 (가장 먼)
+            "Resistance_1st": resistance_1st, # 1차 저항선 (가장 가까운)
+            "Resistance_2nd": resistance_2nd, # 2차 저항선 (그 다음 가까운)
+            "Resistance_3rd": resistance_3rd, # 3차 저항선 (가장 먼)
             "Score": round(score, 1),
             "Recommendation": recommendation
         }
@@ -571,3 +610,55 @@ def swing_stock_data(ticker):
     except Exception as e:
         # 에러 발생 시 분석 실패 메시지 반환
         return {"ticker": ticker.upper(), "Recommendation": f"❌ 분석 실패: {e}"}
+
+# 이 아래는 함수 테스트를 위한 예시 코드입니다.
+# UI 코드는 포함되어 있지 않습니다.
+if __name__ == '__main__':
+    # 검색할 주식 목록 (예시)
+    sample_tickers = [
+        "AAPL", "MSFT", "GOOG", "AMZN", "NVDA", "META", "TSLA", # 기술주
+        "JPM", "BAC", "WFC", # 금융주
+        "UNH", "JNJ", "LLY", # 헬스케어
+        "XOM", "CVX", # 에너지
+        "HD", "WMT", # 소비재
+        "CAT", "GE", # 산업재
+        "VZ", "T", # 통신 서비스
+        "KO", "PG", # 필수 소비재
+        "ADBE", "CRM", # 소프트웨어
+        "SMCI", "AMD", # 반도체
+        "SPG", "PLD" # 리츠
+    ]
+
+    found_stocks = []
+
+    print(f"--- {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')} 기준 주식 분석 시작 ---")
+
+    for ticker in sample_tickers:
+        print(f"Analyzing {ticker}...")
+        result = swing_stock_data(ticker)
+        found_stocks.append(result)
+
+    print("\n--- 분석 결과 ---")
+    if found_stocks:
+        for stock in found_stocks:
+            print(f"\n티커: {stock['ticker']} ({stock['sector']})")
+            print(f"현재가: ${stock['current_price']:.2f}")
+            print(f"RSI(14): {stock['RSI_14']:.2f}")
+            print(f"거래량 비율: {stock['Volume_Rate']:.2f}x")
+            print(f"MACD 추세: {stock['MACD_Trend']} (MACD: {stock['MACD']:.2f}, Signal: {stock['MACD_Signal']:.2f})")
+            print(f"이격도(20): {stock['Disparity_20']:.2f}%")
+            print(f"거래대금: ${stock['Volume_Turnover_Million']:.2f}M")
+            print(f"3일 연속 마감: {stock['Consecutive_Closes']}")
+            print(f"1차 지지선 (MA 20): ${stock['Support_1st']:.2f}")
+            print(f"2차 지지선 (MA 60): ${stock['Support_2nd']:.2f}")
+            print(f"3차 지지선 (MA 120): ${stock['Support_3rd']:.2f}")
+            print(f"1차 저항선: ${stock['Resistance_1st']:.2f}") # 저항선 출력 추가
+            print(f"2차 저항선: ${stock['Resistance_2nd']:.2f}") # 저항선 출력 추가
+            print(f"3차 저항선: ${stock['Resistance_3rd']:.2f}") # 저항선 출력 추가
+            print(f"종합 점수: {stock['Score']:.1f}")
+            print(f"추천: {stock['Recommendation']}")
+            print("-" * 30)
+    else:
+        print("현재 조건에 맞는 주식을 찾을 수 없습니다.")
+
+    print("\n--- 분석 완료 ---")
