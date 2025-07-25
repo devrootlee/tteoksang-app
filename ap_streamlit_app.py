@@ -25,7 +25,6 @@ if 'all_swing_data_cache' not in st.session_state:
 
 st.header("종목 관리")
 
-
 # --- 종목 추가 로직 ---
 def add_symbol_callback():
     new_symbol = st.session_state.new_symbol_input_value
@@ -37,8 +36,6 @@ def add_symbol_callback():
         else:
             st.warning(f"'{symbol_upper}'은(는) 이미 추가된 종목입니다.")
         st.session_state.new_symbol_input_value = ""  # 입력 필드 초기화
-    # Removed st.rerun() from here
-
 
 # 종목 추가 입력 필드
 col_add, col_button = st.columns([3, 1])
@@ -53,7 +50,6 @@ with col_button:
     st.write("")
     st.button("종목 추가", on_click=add_symbol_callback)
 
-
 # --- 개별 종목 재분석 함수 ---
 def reanalyze_single_symbol(symbol_to_reanalyze):
     with st.spinner(f"'{symbol_to_reanalyze}' 종목을 재분석 중입니다..."):
@@ -61,22 +57,19 @@ def reanalyze_single_symbol(symbol_to_reanalyze):
             [symbol_to_reanalyze],  # 단일 종목 리스트로 전달
             rsi_period=14, ma_periods=[5, 20, 50], bb_period=20, bb_num_std_dev=2,
             macd_short=12, macd_long=26, macd_signal=9, vma_period=20,
-            stoch_k_period=14, stoch_d_period=3, atr_period=14
+            stoch_k_period=14, stoch_d_period=3, atr_period=14, adx_period=14
         )
         if single_result:
             st.session_state.all_swing_data_cache[symbol_to_reanalyze] = single_result[0]  # 첫 번째 (이자 유일한) 결과 저장
             st.success(f"'{symbol_to_reanalyze}' 종목 재분석 완료!")
         else:
             st.error(f"'{symbol_to_reanalyze}' 종목 재분석에 실패했습니다. 티커를 확인하거나 잠시 후 다시 시도해주세요.")
-    # Removed st.rerun() from here
-
 
 # --- 현재 추가된 종목 리스트 표시 및 삭제/재분석 기능 ---
 st.subheader("현재 분석 종목")
 if st.session_state.symbols_to_analyze:
     symbols_container = st.container()
     with symbols_container:
-        # 각 종목 옆에 재분석 버튼 추가
         for symbol in st.session_state.symbols_to_analyze:
             col_sym, col_del, col_reanalyze = st.columns([3, 1, 1])
             with col_sym:
@@ -87,40 +80,36 @@ if st.session_state.symbols_to_analyze:
                     if symbol in st.session_state.all_swing_data_cache:
                         del st.session_state.all_swing_data_cache[symbol]
                     st.success(f"'{symbol}' 종목이 삭제되었습니다.")
-                    st.rerun()  # Deletion changes the list structure, so rerun is still useful here.
+                    st.rerun()
             with col_reanalyze:
-                # 콜백 함수에 인자 전달을 위해 람다 사용
                 if st.button(f"재분석", key=f"reanalyze_{symbol}"):
-                    reanalyze_single_symbol(symbol)  # 개별 재분석 함수 호출
+                    reanalyze_single_symbol(symbol)
 
 else:
     st.info("분석할 종목이 없습니다. 위에서 종목을 추가해주세요.")
 
 st.markdown("---")
 
-
 # --- 전체 재분석 함수 ---
 def reanalyze_all_symbols():
     if st.session_state.symbols_to_analyze:
         with st.spinner("모든 종목을 재분석 중입니다... 잠시만 기다려 주세요."):
-            # 캐시를 비우고 모든 종목을 다시 분석하는 대신, 그냥 덮어쓰기 방식으로 처리
             all_results = merge_swing_data(
                 st.session_state.symbols_to_analyze,
                 rsi_period=14, ma_periods=[5, 20, 50], bb_period=20, bb_num_std_dev=2,
                 macd_short=12, macd_long=26, macd_signal=9, vma_period=20,
-                stoch_k_period=14, stoch_d_period=3, atr_period=14
+                stoch_k_period=14, stoch_d_period=3, atr_period=14, adx_period=14
             )
             if all_results:
-                st.session_state.all_swing_data_cache = {}  # 캐시를 새로 채울 것이므로 초기화
+                st.session_state.all_swing_data_cache = {}
                 for result in all_results:
                     st.session_state.all_swing_data_cache[result['ticker']] = result
                 st.success("모든 종목 재분석 완료!")
             else:
                 st.error("모든 종목 재분석에 실패했습니다. 일부 종목의 데이터가 없거나 API 오류일 수 있습니다.")
-        st.rerun()  # Full re-analysis is a significant state change, so rerun here is still good.
+        st.rerun()
     else:
         st.warning("분석할 종목이 없습니다. 종목을 추가해주세요.")
-
 
 # --- 분석 버튼 및 전체 재분석 버튼 ---
 col_start, col_reanalyze_all = st.columns(2)
@@ -141,7 +130,7 @@ with col_start:
                         symbols_to_process,
                         rsi_period=14, ma_periods=[5, 20, 50], bb_period=20, bb_num_std_dev=2,
                         macd_short=12, macd_long=26, macd_signal=9, vma_period=20,
-                        stoch_k_period=14, stoch_d_period=3, atr_period=14
+                        stoch_k_period=14, stoch_d_period=3, atr_period=14, adx_period=14
                     )
 
                 if newly_analyzed_results:
@@ -155,32 +144,20 @@ with col_start:
         else:
             st.warning("분석할 종목이 없습니다. 종목을 추가해주세요.")
 
-        # This st.rerun() is actually okay here because it's not directly inside a callback's on_click.
-        # It's inside the if-condition that evaluates *after* the button click has registered.
-        # However, for consistency and to rely on Streamlit's automatic rerun after *any* widget interaction,
-        # we can remove it here too if no other state changes (like adding/removing items in symbols_to_analyze)
-        # happen within this block that would necessitate an immediate re-render for structural changes.
-        # For data updates in all_swing_data_cache, Streamlit's automatic rerun is sufficient.
-        # Let's remove it to strictly adhere to the "no-op" warning.
-        # st.rerun()
-
 with col_reanalyze_all:
     if st.button("모든 종목 전체 재분석", key="reanalyze_all_button"):
         reanalyze_all_symbols()
 
 ### 📊 분석 결과 요약 및 상세 분석
 
-# --- 분석 결과 표시 로직 (이 부분을 모든 버튼의 영향을 받도록 수정) ---
 if st.session_state.all_swing_data_cache:
-    # symbols_to_analyze 리스트에 있는 순서대로 캐시된 데이터를 가져옴
-    # (삭제된 종목은 표시되지 않도록 필터링)
     all_swing_data_summary = [
         st.session_state.all_swing_data_cache[s]
         for s in st.session_state.symbols_to_analyze
         if s in st.session_state.all_swing_data_cache
     ]
 
-    if all_swing_data_summary:  # 표시할 데이터가 실제로 있을 때만
+    if all_swing_data_summary:
         st.header("📊 분석 결과 요약")
         summary_df_data = []
         for item in all_swing_data_summary:
@@ -191,6 +168,7 @@ if st.session_state.all_swing_data_cache:
                 "MA(5)": f"{item['ma_5']:.2f}" if item['ma_5'] is not None else "N/A",
                 "MA(20)": f"{item['ma_20']:.2f}" if item['ma_20'] is not None else "N/A",
                 "MA(50)": f"{item['ma_50']:.2f}" if item['ma_50'] is not None else "N/A",
+                "ADX": f"{item['adx']:.2f}" if item['adx'] is not None else "N/A",
                 "투자 의견": item['trade_opinion'],
                 "매수 적정가": f"{item['buy_target_price']:.2f}" if item['buy_target_price'] is not None else "N/A",
                 "매도 적정가": f"{item['sell_target_price']:.2f}" if item['sell_target_price'] is not None else "N/A",
@@ -230,11 +208,16 @@ if st.session_state.all_swing_data_cache:
                 st.write(f"  - 히스토그램: {item['macd_histogram']:.2f}" if item['macd_histogram'] is not None else "N/A")
                 st.write(f"**거래량 지표**: ")
                 st.write(f"  - VMA (20): {item['vma']:.2f}" if item['vma'] is not None else "N/A")
+                st.write(f"  - 현재 거래량: {item['volume']:.0f}" if item['volume'] is not None else "N/A")
                 st.write(f"  - OBV: {item['obv']:.0f}" if item['obv'] is not None else "N/A")
                 st.write(f"**스토캐스틱 오실레이터 (14, 3)**: ")
                 st.write(f"  - %K: {item['stoch_k']:.2f}" if item['stoch_k'] is not None else "N/A")
                 st.write(f"  - %D: {item['stoch_d']:.2f}" if item['stoch_d'] is not None else "N/A")
                 st.write(f"**ATR (14)**: {item['atr']:.2f}" if item['atr'] is not None else "N/A")
+                st.write(f"**ADX (14)**: ")
+                st.write(f"  - ADX: {item['adx']:.2f}" if item['adx'] is not None else "N/A")
+                st.write(f"  - +DI: {item['plus_di']:.2f}" if item['plus_di'] is not None else "N/A")
+                st.write(f"  - -DI: {item['minus_di']:.2f}" if item['minus_di'] is not None else "N/A")
 
                 st.subheader("거래 신호 및 적정가")
                 st.markdown(f"**매수 신호 이유**: {item['buy_reasons']}")
